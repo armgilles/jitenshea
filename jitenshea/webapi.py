@@ -29,9 +29,21 @@ logger = daiquiri.getLogger("jitenshea-webapi")
 
 
 class CustomJSONEncoder(JSONEncoder):
-    """Custom JSON encoder to handle date
+    """Custom JSON encoder to handle date; inherits from `flask.json.JSONEncoder` class
     """
     def default(self, obj):
+        """Produces a serialize version of `obj`
+
+        Parameters
+        ----------
+        obj : object
+            Object to serialize into a json file
+
+        Returns
+        -------
+        obj
+            Serializable version of ̀obj`
+        """
         try:
             if isinstance(obj, datetime):
                 return obj.strftime(ISO_DATETIME)
@@ -52,9 +64,23 @@ class ListConverter(BaseConverter):
     Inspired from http://exploreflask.com/en/latest/views.html#custom-converters
     """
     def to_python(self, value):
+        """Convert `value` into a Python list
+
+        Parameters
+        ----------
+        value : str
+            URL to decode
+        """
         return value.split(',')
 
     def to_url(self, values):
+        """Convert `values` into a URL
+
+        Parameters
+        ----------
+        values : list
+            List of element to integrate into an URL string
+        """
         return ','.join(BaseConverter.to_url(value)
                         for value in values)
 
@@ -64,6 +90,16 @@ app.json_encoder = CustomJSONEncoder
 
 def parse_date(strdate):
     """Parse a string and convert it to a date
+
+    Parameters
+    ----------
+    strdate : str
+        Date under a string format
+
+    Returns
+    -------
+    datetime.date
+        Converted date
     """
     try:
         year, month, day = [int(x) for x in strdate.split('-')]
@@ -79,6 +115,15 @@ def parse_timestamp(str_timestamp):
       - YYYY-MM-DD
       - YYYY-MM-DDThh
       - YYYY-MM-DDThhmm
+
+    Parameters
+    ----------
+    str_timestamp : str
+        Timestamp under the string format
+    Returns
+    -------
+    datetime.datetime
+        Converted time
     """
     try:
         dt = parse(str_timestamp)
@@ -87,9 +132,16 @@ def parse_timestamp(str_timestamp):
     return dt
 
 def check_city(city):
+    """City checker, if `city` is not into the list of known cities, it makes
+    the API abort
+
+    Parameters
+    ----------
+    city : str
+        City to consider and to compare with the known list
+    """
     if city not in CITIES:
         api.abort(404, "City {} not found".format(city))
-
 
 api = Api(app,
           title='Jitenshea: Bicycle-sharing data analysis',
@@ -147,19 +199,46 @@ daily_profile_parser.add_argument("window", required=False, type=int, default=30
 
 @app.route('/doc/')
 def swagger_ui():
+    """Render the doc html webpage, that contains the web API requesting
+    tool
+    """
     return render_template("swagger-ui.html")
 
 @api.route("/city")
 class City(Resource):
+    """Set up the Flask Resource dedicated to city requesting
+    """
     @api.doc("List of cities")
     def get(self):
+        """Get the list of considered cities
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of the city list
+        """
         return jsonify(controller.cities())
 
 @api.route("/<string:city>/station")
 class CityStationList(Resource):
+    """Set up the Flask Resource dedicated to station list requesting, for each
+    considered city
+    """
     @api.doc(parser=station_list_parser,
                  description="Bicycle-sharing stations")
     def get(self, city):
+        """Get the station list for a given `city`
+
+        Parameters
+        ----------
+        city : str
+            City to consider, either `bordeaux` or `lyon`
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of the list of stations in `city`
+        """
         check_city(city)
         args = station_list_parser.parse_args()
         limit = args['limit']
@@ -168,8 +247,25 @@ class CityStationList(Resource):
 
 @api.route("/<string:city>/station/<list:ids>")
 class CityStation(Resource):
+    """Set up the Flask Resource dedicated to station requesting, for each
+    considered city
+    """
     @api.doc(description="Bicycle station(s)")
     def get(self, city, ids):
+        """Get the station(s) identified by `ids` for a given `city`
+
+        Parameters
+        ----------
+        city : str
+            City to consider, either `bordeaux` or `lyon`
+        ids : list of integers
+            IDs of station to consider in `city`
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of stations in `city`
+        """
         check_city(city)
         if city == 'bordeaux':
             rset = controller.bordeaux(ids)
@@ -181,9 +277,27 @@ class CityStation(Resource):
 
 @api.route("/<string:city>/daily/station/<list:ids>")
 class CityDailyStation(Resource):
+    """Set up the Flask Resource dedicated to daily transaction requesting, for
+    each station in each considered city
+    """
     @api.doc(parser=daily_parser,
              description="Bicycle station(s) daily transactions")
     def get(self, city, ids):
+        """Get the daily transactions that occurred on the station(s)
+        identified by `ids` for a given `city`
+
+        Parameters
+        ----------
+        city : str
+            City to consider, either `bordeaux` or `lyon`
+        ids : list of integers
+            IDs of station to consider in `city`
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of station daily transaction
+        """
         check_city(city)
         args = daily_parser.parse_args()
         day = parse_date(args['date'])
@@ -196,9 +310,24 @@ class CityDailyStation(Resource):
 
 @api.route("/<string:city>/daily/station")
 class CityDailyStationList(Resource):
+    """Set up the Flask Resource dedicated to total daily transaction
+    requesting, for each considered city
+    """
     @api.doc(parser=daily_list_parser,
              description="Daily transactions for all stations")
     def get(self, city):
+        """Get the total daily transactions that occurred in a given `city`
+
+        Parameters
+        ----------
+        city : str
+            City to consider, either `bordeaux` or `lyon`
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of city daily transaction
+        """
         check_city(city)
         args = daily_list_parser.parse_args()
         day = parse_date(args['date'])
@@ -213,6 +342,9 @@ class CityDailyStationList(Resource):
 
 @api.route("/<string:city>/timeseries/station/<list:ids>")
 class CityTimeseriesStation(Resource):
+    """Set up the Flask Resource dedicated to station timeseries requesting,
+    for each station, in each considered city
+    """
     @api.doc(parser=timeseries_parser,
              description="Bicycle station(s) timeseries")
     def get(self, city, ids):
@@ -227,9 +359,27 @@ class CityTimeseriesStation(Resource):
 
 @api.route("/<string:city>/profile/hourly/station/<list:ids>")
 class CityHourlyStation(Resource):
+    """Set up the Flask Resource dedicated to bicycle station hourly profile
+    requesting, for each station in each considered city
+    """
     @api.doc(parser=hourly_profile_parser,
              description="Bicycle station(s) hourly profile")
     def get(self, city, ids):
+        """Get the bike availability hourly profile on the station(s)
+        identified by `ids` for a given `city`
+
+        Parameters
+        ----------
+        city : str
+            City to consider, either `bordeaux` or `lyon`
+        ids : list of integers
+            IDs of station to consider in `city`
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of station hourly profile
+        """
         check_city(city)
         args = hourly_profile_parser.parse_args()
         day = parse_date(args['date'])
@@ -241,9 +391,27 @@ class CityHourlyStation(Resource):
 
 @api.route("/<string:city>/profile/daily/station/<list:ids>")
 class CityDailyStation(Resource):
+    """Set up the Flask Resource dedicated to bicycle station daily profile
+    requesting, for each station in each considered city
+    """
     @api.doc(parser=daily_profile_parser,
              description="Bicycle station(s) daily profile")
     def get(self, city, ids):
+        """Get the hourly transactions that occurred on the station(s)
+        identified by `ids` for a given `city`
+
+        Parameters
+        ----------
+        city : str
+            City to consider, either `bordeaux` or `lyon`
+        ids : list of integers
+            IDs of station to consider in `city`
+
+        Returns
+        -------
+        flask.Response
+            Jsonified version of station daily profile
+        """
         check_city(city)
         args = daily_profile_parser.parse_args()
         day = parse_date(args['date'])
