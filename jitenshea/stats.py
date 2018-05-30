@@ -257,7 +257,7 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
         df = df[df.index >= start]
     logger.info("Data shape after start cut: %s", df.shape)
     train = df[df.index <= cut].copy()
-    logger.info("Data shape after prediction date cut: %s", df.shape)
+    logger.info("Data shape after prediction date cut: %s", train.shape)
     train_X = train.drop(["probability", "future"], axis=1)
     train_Y = train['future'].copy()
     # time window
