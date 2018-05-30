@@ -18,6 +18,13 @@ logger = daiquiri.getLogger("stats")
 SEED = 2018
 np.random.seed(SEED)
 
+CLUSTER_ACT_PATH_CSV ='jitenshea/data/cluster_activite.csv'
+
+
+###################################
+###         CLUSTER ACTIVITE
+###################################
+
 def preprocess_data_for_clustering(df):
     """Prepare data in order to apply a clustering algorithm
 
@@ -52,7 +59,7 @@ def preprocess_data_for_clustering(df):
     df = df.groupby("hour").mean()
     return df / df.max()
 
-def compute_clusters(df):
+def compute_clusters(df, cluster_path_csv=None):
     """Compute station clusters based on bike availability time series
 
     Parameters
@@ -61,19 +68,88 @@ def compute_clusters(df):
         Input data, *i.e.* city-related timeseries, supposed to have
     `station_id`, `ts` and `nb_bikes` columns
 
+    cluster_path_csv : String :
+        Path to export df_labels DataFrame
+
     Returns
     -------
-    dict
-        Two pandas.DataFrame, the former for station clusters and the latter
-    for cluster centroids
+    If cluster_path_csv is not None :
+        Return noting (just export DataFrame in cluster_path_csv)
+    Else :
+        dict
+            Two pandas.DataFrame, the former for station clusters and the latter
+        for cluster centroids
+
 
     """
     df_norm = preprocess_data_for_clustering(df)
-    model = KMeans(n_clusters=4, random_state=0)
+    model = KMeans(n_clusters=4, random_state=SEED)
     kmeans = model.fit(df_norm.T)
     df_labels = pd.DataFrame({"id_station": df_norm.columns, "labels": kmeans.labels_})
     df_centroids = pd.DataFrame(kmeans.cluster_centers_).reset_index()
-    return {"labels": df_labels, "centroids": df_centroids}
+    if cluster_path_csv != None:
+        df_labels.to_csv(cluster_path_csv, index=False)
+    else:
+        return {"labels": df_labels, "centroids": df_centroids}
+
+def read_cluster_activite(cluster_path_csv):
+    """
+    Read cluster activite csv
+
+    Parameters
+    -------
+        cluster_path_csv : String :
+            Path to export df_labels DataFrame
+
+    Returns
+    -------
+        pandas.DataFrame    
+    """
+    try:
+        cluster_activite = pd.read_csv(cluster_path_csv)
+        return cluster_activite
+    except Exception as e:
+        print("Error : can't read cluster activite : ")
+        print(e)
+
+def get_cluster_activite(cluster_path_csv, test, train=None):
+    """Get cluster activite csv from patch cluster_path_csv.
+    Merge cluster with station_id
+
+    Parameters
+    ----------
+    cluster_path_csv : String :
+        Path to export df_labels DataFrame
+    test : pandas.DataFrame
+
+    train : pandas.DataFrame
+
+    Returns
+    -------
+
+    If train is not None:
+        Return 2 pandas.DataFrame train, test
+    Else:     
+        Return 1 pandas.DataFrame test
+    """
+
+    cluster_activite = read_cluster_activite(cluster_path_csv=cluster_path_csv)
+
+    test = test.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+    test.drop('id_station', axis=1, inplace=True)
+
+    if len(train) > 0:
+        train = train.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+        train.drop('id_station', axis=1, inplace=True)
+        return train, test
+    else:
+        return test
+
+
+###################################
+###         DATA PROCESS
+###################################
+
 
 def time_resampling(df, freq="10T"):
     """Normalize the timeseries by resampling its timestamps
@@ -190,6 +266,13 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
     test_Y = test['future'].copy()
     return train_X, train_Y, test_X, test_Y
 
+
+
+###################################
+###         ALGO
+###################################
+
+
 def fit(train_X, train_Y, test_X, test_Y):
     """Train the xgboost model
 
@@ -256,5 +339,15 @@ def train_prediction_model(df, validation_date, frequency):
                                                  start=df.index.min(),
                                                  periods=2)
     train_X, train_Y, test_X, test_Y = train_test_split
+
+
+    # Create cluster activity
+    compute_clusters(train_X.reset_index(), cluster_path_csv=CLUSTER_ACT_PATH_CSV)
+
+    # Merge result of cluster activite
+    train_X, test_X = get_cluster_activite(CLUSTER_ACT_PATH_CSV, test_X, train_X)
+
+
+
     trained_model = fit(train_X, train_Y, test_X, test_Y)
-    return trained_model[0]
+    return trained_model[0], train_X, train_Y, test_X, test_Y
