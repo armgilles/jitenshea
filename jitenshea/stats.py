@@ -15,6 +15,9 @@ from jitenshea import config
 daiquiri.setup(logging.INFO)
 logger = daiquiri.getLogger("stats")
 
+SEED = 2018
+np.random.seed(SEED)
+
 def preprocess_data_for_clustering(df):
     """Prepare data in order to apply a clustering algorithm
 
@@ -87,6 +90,7 @@ def time_resampling(df, freq="10T"):
     pandas.DataFrame
         Resampled data
     """
+
     logger.info("Time resampling for each station by '%s'", freq)
     df = (df.groupby("station_id")
           .resample(freq, on="ts")[["ts", "nb_bikes", "nb_stands", "probability"]]
@@ -181,8 +185,7 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
     train_X = train.drop(["probability", "future"], axis=1)
     train_Y = train['future'].copy()
     # time window
-    mask = np.logical_and(df.index >= date, df.index <= stop)
-    test = df[mask].copy()
+    test = df[df.index >= stop].copy()
     test_X = test.drop(["probability", "future"], axis=1)
     test_Y = test['future'].copy()
     return train_X, train_Y, test_X, test_Y
@@ -209,6 +212,7 @@ def fit(train_X, train_Y, test_X, test_Y):
     param['max_depth'] = 6
     param['silent'] = 1
     param['nthread'] = 4
+    param['seed'] = SEED
     training_progress = dict()
     xg_train = xgb.DMatrix(train_X, label=train_Y)
     xg_test = xgb.DMatrix(test_X, label=test_Y)
