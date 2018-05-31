@@ -348,6 +348,26 @@ def get_station_recently_closed(df, nb_hours=4):
     return df
 
 
+
+
+def create_rolling_mean_features(df, features_name, feature_to_mean, features_grp, nb_shift):
+    """
+    function to create a rolling mean on "feature_to_mean" called "features_name" 
+    groupby "features_grp" on "nb_shift" value
+    Have to sort dataframe and re sort at the end
+    """
+    df.reset_index(inplace=True)
+    df = df.sort_values(['station_id', 'ts'])
+
+
+    # Create rolling features
+    df[features_name] = df.groupby(features_grp)[feature_to_mean].apply(lambda x: x.rolling(window=nb_shift, min_periods=1).mean())
+
+    df = df.sort_values(['ts', 'station_id']) 
+    df = df.set_index('ts')
+    return df
+
+
 ###################################
 ###         ALGO
 ###################################
@@ -421,6 +441,14 @@ def train_prediction_model(df, validation_date, frequency):
     
     logger.info("Create Target")
     df = add_future(df, frequency)
+
+    # logger.info("Create mean transformation")
+    df = create_rolling_mean_features(df, 
+                                         features_name='mean_6', 
+                                         feature_to_mean='probability', 
+                                         features_grp='station_id', 
+                                         nb_shift=6)
+    
 
 
     logger.info("Split data into train / test dataset")
