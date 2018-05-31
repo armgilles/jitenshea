@@ -7,6 +7,8 @@ import daiquiri
 
 import numpy as np
 import pandas as pd
+from dateutil import parser
+from workalendar.europe import France
 from sklearn.cluster import KMeans
 import xgboost as xgb
 
@@ -14,6 +16,9 @@ from jitenshea import config
 
 daiquiri.setup(logging.INFO)
 logger = daiquiri.getLogger("stats")
+
+# French Calendar
+cal = France()
 
 SEED = 2018
 np.random.seed(SEED)
@@ -267,6 +272,27 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
     return train_X, train_Y, test_X, test_Y
 
 
+def get_summer_holiday(df):
+    """
+    Create bool for summer holiday (2017-09-04)
+    """
+
+    df['date'] = df.ts.dt.date
+    df['date'] = df['date'].astype('str')
+
+    # Create DF with unique date (yyyy-mm-dd)
+    date_df = pd.DataFrame(df.date.unique(), columns=['date'])
+    date_df['date'] = date_df['date'].astype('str')
+
+    date_df['is_holiday'] = date_df['date'].apply(lambda x : parser.parse(x) < parser.parse("2017-09-04"))
+    date_df['is_holiday'] = date_df['is_holiday'].astype('int')
+
+    #merging
+    df = df.merge(date_df, on='date', how='left')
+    df.drop('date', axis=1, inplace=True)
+    return df
+
+
 
 ###################################
 ###         ALGO
@@ -332,7 +358,13 @@ def train_prediction_model(df, validation_date, frequency):
     """
     df = time_resampling(df)
     df = complete_data(df)
+
+    logger.info("Get summer holiday features")
+    df = get_summer_holiday(df)
+
+    logger.info("Create Target")
     df = add_future(df, frequency)
+    
     train_test_split = prepare_data_for_training(df,
                                                  validation_date,
                                                  frequency=frequency,
