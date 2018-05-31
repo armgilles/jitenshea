@@ -50,6 +50,7 @@ def preprocess_data_for_clustering(df):
     unactive_stations = max_bikes[max_bikes==0].index.tolist()
     active_station_mask = np.logical_not(df['station_id'].isin(unactive_stations))
     df = df[active_station_mask]
+
     # Set timestamps as the DataFrame index and resample it with 5-minute periods
     df = (df.set_index("ts")
           .groupby("station_id")["nb_bikes"]
@@ -157,7 +158,8 @@ def get_cluster_activite(cluster_path_csv, test, train=None):
 
 
 def time_resampling(df, freq="10T"):
-    """Normalize the timeseries by resampling its timestamps
+    """Normalize the timeseries by resampling its timestamps. 
+        Transforme "status" into numerical "is_open" Bool
 
     Parameters
     ----------
@@ -172,9 +174,15 @@ def time_resampling(df, freq="10T"):
         Resampled data
     """
 
+
+
     logger.info("Time resampling for each station by '%s'", freq)
+
+    df['is_open'] = 0
+    df.loc[df['status'] == "OPEN", 'is_open'] = 1
+
     df = (df.groupby("station_id")
-          .resample(freq, on="ts")[["ts", "nb_bikes", "nb_stands", "probability"]]
+          .resample(freq, on="ts")[["ts", "nb_bikes", "nb_stands", "is_open", "probability"]]
           .mean()
           .bfill())
     return df.reset_index()
@@ -207,6 +215,8 @@ def complete_data(df):
 def add_future(df, frequency):
     """Add future bike availability to each observation by shifting input data
     accurate columns with respect to a given `frequency`
+
+    Set TS on index
 
     Parameters
     ----------
@@ -272,9 +282,22 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
     return train_X, train_Y, test_X, test_Y
 
 
+###################################
+###         ADVANCE FEATURES
+###################################
+
+
 def get_summer_holiday(df):
     """
-    Create bool for summer holiday (2017-09-04)
+    Create bool for summer holiday
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+
+    Returns
+    -------
+    df : pandas.DataFrame
     """
 
     df['date'] = df.ts.dt.date
@@ -292,6 +315,37 @@ def get_summer_holiday(df):
     df.drop('date', axis=1, inplace=True)
     return df
 
+
+def get_station_recently_closed(df, nb_hours=4):
+    """
+    Create a indicator who check the number of periods the station was close during the nb_hours
+    - 0 The station was NOT closed during nb_hours
+    - > 1 The station was closes X times during nb_hours
+
+    Need to sort the dataframe
+    Warning : depend of the périod of resampling
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+    nb_hours : int - Numbers of hours for the windows analysis
+
+
+    Returns
+    -------
+    df : pandas.DataFrame
+
+
+    """
+    # Resorting
+    df = df.sort_values(['station_id', 'ts'])
+
+    time_period = nb_hours * 6 # For a 10T resampling, 1 hours -> 6 rows
+    df['was_recently_open'] = df['is_open'].rolling(window=time_period, min_periods=1).sum()
+
+    df = df.sort_values(['station_id', 'ts',])
+
+    return df
 
 
 ###################################
@@ -362,9 +416,14 @@ def train_prediction_model(df, validation_date, frequency):
     logger.info("Get summer holiday features")
     df = get_summer_holiday(df)
 
+    logger.info("Create recenlty open station indicator")
+    df = get_station_recently_closed(df, nb_hours=4)
+    
     logger.info("Create Target")
     df = add_future(df, frequency)
-    
+
+
+    logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
                                                  validation_date,
                                                  frequency=frequency,
@@ -372,7 +431,7 @@ def train_prediction_model(df, validation_date, frequency):
                                                  periods=2)
     train_X, train_Y, test_X, test_Y = train_test_split
 
-
+    logger.info("Cluster activity label")
     # Create cluster activity
     compute_clusters(train_X.reset_index(), cluster_path_csv=CLUSTER_ACT_PATH_CSV)
 
