@@ -23,14 +23,19 @@ cal = France()
 SEED = 2018
 np.random.seed(SEED)
 
+LYON_STATION_PATH_CSV = 'jitenshea/data/lyon-stations.csv'
 CLUSTER_ACT_PATH_CSV ='jitenshea/data/cluster_activite.csv'
+CLUSTER_GEO_PATH_CSV ='jitenshea/data/cluster_geo.csv'
 
 
 ###################################
 ###         CLUSTER ACTIVITE
 ###################################
 
-def preprocess_data_for_clustering(df):
+
+### CLUSTER ACTIVITY
+
+def preprocess_data_for_clustering_act(df):
     """Prepare data in order to apply a clustering algorithm
 
     Parameters
@@ -65,7 +70,7 @@ def preprocess_data_for_clustering(df):
     df = df.groupby("hour").mean()
     return df / df.max()
 
-def compute_clusters(df, cluster_path_csv=None):
+def compute_act_clusters(df, cluster_act_path_csv=None):
     """Compute station clusters based on bike availability time series
 
     Parameters
@@ -74,13 +79,13 @@ def compute_clusters(df, cluster_path_csv=None):
         Input data, *i.e.* city-related timeseries, supposed to have
     `station_id`, `ts` and `nb_bikes` columns
 
-    cluster_path_csv : String :
+    cluster_act_path_csv : String :
         Path to export df_labels DataFrame
 
     Returns
     -------
-    If cluster_path_csv is not None :
-        Return noting (just export DataFrame in cluster_path_csv)
+    If cluster_act_path_csv is not None :
+        Return noting (just export DataFrame in cluster_act_path_csv)
     Else :
         dict
             Two pandas.DataFrame, the former for station clusters and the latter
@@ -88,23 +93,24 @@ def compute_clusters(df, cluster_path_csv=None):
 
 
     """
-    df_norm = preprocess_data_for_clustering(df)
+    df_norm = preprocess_data_for_clustering_act(df)
     model = KMeans(n_clusters=4, random_state=SEED)
     kmeans = model.fit(df_norm.T)
-    df_labels = pd.DataFrame({"id_station": df_norm.columns, "labels": kmeans.labels_})
-    df_centroids = pd.DataFrame(kmeans.cluster_centers_).reset_index()
-    if cluster_path_csv != None:
-        df_labels.to_csv(cluster_path_csv, index=False)
+    labels = pd.DataFrame({"id_station": df_norm.columns, 
+                                "cluster_activty": kmeans.labels_})
+    centroids = pd.DataFrame(kmeans.cluster_centers_).reset_index()
+    if cluster_act_path_csv != None:
+        labels.to_csv(cluster_act_path_csv, index=False)
     else:
-        return {"labels": df_labels, "centroids": df_centroids}
+        return {"labels": labels, "centroids": centroids}
 
-def read_cluster_activite(cluster_path_csv):
+def read_cluster_activity(cluster_act_path_csv):
     """
     Read cluster activite csv
 
     Parameters
     -------
-        cluster_path_csv : String :
+        cluster_act_path_csv : String :
             Path to export df_labels DataFrame
 
     Returns
@@ -112,14 +118,119 @@ def read_cluster_activite(cluster_path_csv):
         pandas.DataFrame    
     """
     try:
-        cluster_activite = pd.read_csv(cluster_path_csv)
+        cluster_activite = pd.read_csv(cluster_act_path_csv)
         return cluster_activite
     except Exception as e:
         print("Error : can't read cluster activite : ")
         print(e)
 
-def get_cluster_activite(cluster_path_csv, test, train=None):
+def get_cluster_activity(cluster_act_path_csv, test, train=None):
     """Get cluster activite csv from patch cluster_path_csv.
+    Merge cluster with station_id
+
+    Parameters
+    ----------
+    cluster_act_path_csv : String :
+        Path to export df_labels DataFrame
+    test : pandas.DataFrame
+
+    train : pandas.DataFrame
+
+    Returns
+    -------
+
+    If train is not None:
+        Return 2 pandas.DataFrame train, test
+    Else:     
+        Return 1 pandas.DataFrame test
+    """
+
+    cluster_activite = read_cluster_activity(cluster_act_path_csv=cluster_act_path_csv)
+
+    test = test.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+    test.drop('id_station', axis=1, inplace=True)
+
+    if len(train) > 0:
+        train = train.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+        train.drop('id_station', axis=1, inplace=True)
+        return train, test
+    else:
+        return test
+
+
+### CLUSTER GEO
+
+def preprocess_data_for_clustering_geo(LYON_STATION_PATH_CSV):
+    """Prepare data in order to apply a clustering algorithm
+
+    Parameters
+    ----------
+    cluster_act_path_csv : String :
+        Path to read lyon station csv
+
+    Returns
+    -------
+    pandas.DataFrame
+        Simpified version of `df`, ready to be used for clustering
+
+    """
+    
+    station = pd.read_csv(LYON_STATION_PATH_CSV)
+
+    return station
+
+
+def compute_geo_clusters(cluster_geo_path_csv=None):
+    """Compute stations clusters based on their geolocalization
+
+    Parameters
+    ----------
+    cluster_geo_path_csv : String :
+        Path to export df_labels DataFrame
+
+    Returns
+    ------
+    dict
+        labels: id station and their cluster id
+        centroids: cluster centroids
+    """
+
+    station = preprocess_data_for_clustering_geo(LYON_STATION_PATH_CSV)
+
+    X = station[['lat', 'lon']].copy()
+    k_means = KMeans(init='k-means++', n_clusters=12).fit(X)
+    labels = pd.DataFrame({"id_station": station['idstation'],
+                           "cluster_geo": k_means.labels_})
+    labels.sort_values(by="id_station", inplace=True)
+    centroids = pd.DataFrame(k_means.cluster_centers_, columns=['lat', 'lon'])
+    if cluster_geo_path_csv != None:
+        labels.to_csv(cluster_geo_path_csv, index=False)
+    else:
+        return {"labels": labels, "centroids": centroids}
+
+
+def read_cluster_geo(cluster_geo_path_csv):
+    """
+    Read cluster activite csv
+
+    Parameters
+    -------
+        cluster_geo_path_csv : String :
+            Path to export labels DataFrame
+
+    Returns
+    -------
+        pandas.DataFrame    
+    """
+    try:
+        cluster_geo = pd.read_csv(cluster_geo_path_csv)
+        return cluster_geo
+    except Exception as e:
+        print("Error : can't read cluster geo : ")
+        print(e)
+
+def get_cluster_geo(cluster_geo_path_csv, test, train=None):
+    """Get cluster activite csv from patch cluster_geo_path_csv.
     Merge cluster with station_id
 
     Parameters
@@ -139,17 +250,19 @@ def get_cluster_activite(cluster_path_csv, test, train=None):
         Return 1 pandas.DataFrame test
     """
 
-    cluster_activite = read_cluster_activite(cluster_path_csv=cluster_path_csv)
+    cluster_geo = read_cluster_geo(cluster_geo_path_csv=cluster_geo_path_csv)
 
-    test = test.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+    test = test.merge(cluster_geo, left_on='station_id', right_on='id_station',  how='left')
     test.drop('id_station', axis=1, inplace=True)
 
     if len(train) > 0:
-        train = train.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+        train = train.merge(cluster_geo, left_on='station_id', right_on='id_station',  how='left')
         train.drop('id_station', axis=1, inplace=True)
         return train, test
     else:
         return test
+
+
 
 
 ###################################
@@ -460,11 +573,18 @@ def train_prediction_model(df, validation_date, frequency):
     train_X, train_Y, test_X, test_Y = train_test_split
 
     logger.info("Cluster activity label")
-    # Create cluster activity
-    compute_clusters(train_X.reset_index(), cluster_path_csv=CLUSTER_ACT_PATH_CSV)
+    #Create cluster activity
+    compute_act_clusters(train_X.reset_index(), cluster_act_path_csv=CLUSTER_ACT_PATH_CSV)
 
     # Merge result of cluster activite
-    train_X, test_X = get_cluster_activite(CLUSTER_ACT_PATH_CSV, test_X, train_X)
+    train_X, test_X = get_cluster_activity(CLUSTER_ACT_PATH_CSV, test_X, train_X)
+
+    logger.info("Cluster geo label")
+    # Create cluster geo
+    compute_geo_clusters(cluster_geo_path_csv=CLUSTER_GEO_PATH_CSV)
+
+    # Merge result of cluster activite
+    train_X, test_X = get_cluster_geo(CLUSTER_GEO_PATH_CSV, test_X, train_X)
 
 
 
