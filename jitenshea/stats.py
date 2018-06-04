@@ -27,6 +27,14 @@ LYON_STATION_PATH_CSV = 'jitenshea/data/lyon-stations.csv'
 CLUSTER_ACT_PATH_CSV ='jitenshea/data/cluster_activite.csv'
 CLUSTER_GEO_PATH_CSV ='jitenshea/data/cluster_geo.csv'
 
+XGB_PARAM ={"objective": "reg:logistic",
+              "booster" : "gbtree",
+              "eta": 0.2,
+              "max_depth": 9,
+              "subsample":0.9,
+              "silent": 1,
+              "seed": SEED}
+
 
 ###################################
 ###         CLUSTER ACTIVITE
@@ -480,6 +488,59 @@ def create_rolling_mean_features(df, features_name, feature_to_mean, features_gr
     df = df.set_index('ts')
     return df
 
+def create_rolling_std_features(df, features_name, feature_to_std, features_grp, nb_shift):
+    """
+    function to create a rolling std on "feature_to_std" called "features_name" 
+    groupby "features_grp" on "nb_shift" value
+    Have to sort dataframe and re sort at the end
+    """
+    
+    df.reset_index(inplace=True)
+    df = df.sort_values(['station_id', 'ts'])
+
+
+    # Create rolling features
+    df[features_name] = df.groupby(features_grp)[feature_to_std].apply(lambda x: x.rolling(window=nb_shift, min_periods=1).std())
+
+    df = df.sort_values(['ts', 'station_id']) 
+    df = df.set_index('ts')
+    return df
+
+
+def create_ratio_filling_bike_on_bike(df, cluster_name):
+    """
+    Get filling bike station on station cluster_name (geo or activity)
+    Calcul number of total stand on cluster_name / time
+    Calcul number of bike on cluster_name / time
+    Create ratio on total stand and bike on station on cluster_name
+    Merge the result with the DataFrame
+    """
+
+    df = df.reset_index()
+    # Total stand for station
+    df['total_stand'] = df['nb_bikes'] + df['nb_stands']
+
+    # Total stand by time and geo cluster
+    total_stand_by_geo_cluster = df.groupby(['ts', cluster_name], as_index=False)['total_stand'].sum()
+    total_stand_by_geo_cluster.rename(columns={'total_stand':'total_stand_'+cluster_name}, inplace=True)
+
+    # Total bike by time and geo cluster on nb_bike
+    features_by_geo_cluster = df.groupby(['ts', cluster_name], as_index=False)["nb_bikes"].sum()
+    features_by_geo_cluster.rename(columns={"nb_bikes":"nb_bikes_"+ cluster_name}, inplace=True)
+
+    # Merging this 2 DataFrame
+    grp_features_geo_cluster = total_stand_by_geo_cluster.merge(features_by_geo_cluster, 
+                                                                on=['ts', cluster_name], 
+                                                                how='inner')
+
+    # Create Ratio
+    grp_features_geo_cluster['ratio_nb_bikes_'+cluster_name] = grp_features_geo_cluster['nb_bikes_'+cluster_name] / grp_features_geo_cluster['total_stand_' + cluster_name]
+    grp_features_geo_cluster = grp_features_geo_cluster[['ts', cluster_name, 'ratio_nb_bikes_'+cluster_name]]
+    # Merge with df
+    df = df.merge(grp_features_geo_cluster, on=['ts', cluster_name], how='left')
+    #df = df.drop('total_stand', axis=1)
+    return df
+
 
 ###################################
 ###         ALGO
@@ -503,23 +564,24 @@ def fit(train_X, train_Y, test_X, test_Y):
     """
     logger.info("Fit training data with the model...")
     # param = {'objective': 'reg:linear'}
-    param = {'objective': 'reg:logistic'}
-    param['eta'] = 0.2
-    param['max_depth'] = 6
-    param['silent'] = 1
-    param['nthread'] = 4
-    param['seed'] = SEED
+    # param = {'objective': 'reg:logistic'}
+    # param['eta'] = 0.2
+    # param['max_depth'] = 6
+    # param['silent'] = 1
+    # param['nthread'] = 4
+    # param['seed'] = SEED
     training_progress = dict()
     xg_train = xgb.DMatrix(train_X, label=train_Y)
     xg_test = xgb.DMatrix(test_X, label=test_Y)
     watchlist = [(xg_train, 'train'), (xg_test, 'test')]
     num_round = 25
-    bst = xgb.train(params=param,
+    bst = xgb.train(params=XGB_PARAM,
                     dtrain=xg_train,
                     num_boost_round=num_round,
                     evals=watchlist,
                     evals_result=training_progress)
     return bst, training_progress
+
 
 def train_prediction_model(df, validation_date, frequency):
     """Train a XGBoost model on `df` data with a train/validation split given
@@ -555,16 +617,23 @@ def train_prediction_model(df, validation_date, frequency):
     logger.info("Create Target")
     df = add_future(df, frequency)
 
-    # logger.info("Create mean transformation")
+    logger.info("Create mean transformation")
     df = create_rolling_mean_features(df, 
-                                         features_name='mean_6', 
-                                         feature_to_mean='probability', 
-                                         features_grp='station_id', 
-                                         nb_shift=6)
-    
+                                     features_name='mean_6', 
+                                     feature_to_mean='probability', 
+                                     features_grp='station_id', 
+                                     nb_shift=6)
 
+    logger.info("Create std transformation")
+    df = create_rolling_std_features(df, 
+                                     features_name='std_9', 
+                                     feature_to_std='probability', 
+                                     features_grp='station_id', 
+                                     nb_shift=9)
 
     logger.info("Split data into train / test dataset")
+
+
     train_test_split = prepare_data_for_training(df,
                                                  validation_date,
                                                  frequency=frequency,
@@ -572,20 +641,53 @@ def train_prediction_model(df, validation_date, frequency):
                                                  periods=2)
     train_X, train_Y, test_X, test_Y = train_test_split
 
+#     train_X.tail()
+#                         station_id  nb_bikes  nb_stands  is_open  day  hour  \
+# ts
+# 2018-05-11 23:30:00       11001       1.0       17.0      1.0    4    23
+# 2018-05-11 23:30:00       11002       5.0       15.0      1.0    4    23
+
+    # Keep TS's index in memory
+    train_index = train_X.index
+    test_index = test_X.index
+
     logger.info("Cluster activity label")
     #Create cluster activity
     compute_act_clusters(train_X.reset_index(), cluster_act_path_csv=CLUSTER_ACT_PATH_CSV)
-
     # Merge result of cluster activite
     train_X, test_X = get_cluster_activity(CLUSTER_ACT_PATH_CSV, test_X, train_X)
 
     logger.info("Cluster geo label")
     # Create cluster geo
     compute_geo_clusters(cluster_geo_path_csv=CLUSTER_GEO_PATH_CSV)
-
     # Merge result of cluster activite
     train_X, test_X = get_cluster_geo(CLUSTER_GEO_PATH_CSV, test_X, train_X)
 
+    #Some bad move when cure train_X & test_X (sorting ?)
+    # triaining can't learn...
+
+    # # Give back TS index in train_X & test_X
+    train_X.set_index(train_index, inplace=True)
+    test_X.set_index(test_index, inplace=True)
+
+
+    # Have to concat X_train & X_test to calculate rolling windows ratio
+    n_train = len(train_X)
+    df_all = pd.concat([train_X, test_X])
+
+    logger.info("Create Ratio of bike dispo on cluster geo")
+    df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_geo')
+
+    logger.info("Create Ratio of bike dispo on cluster geo")
+    df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_activty')
+
+
+    # Cut df_all to give back train_X & test_X
+    train_X = df_all[: n_train].copy()
+    test_X = df_all[n_train:].copy()
+
+    train_X.drop('ts', axis=1, inplace=True)
+    test_X.drop('ts', axis=1, inplace=True)
 
 
     trained_model = fit(train_X, train_Y, test_X, test_Y)
