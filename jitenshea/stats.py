@@ -471,31 +471,34 @@ def get_station_recently_closed(df, nb_hours=4):
 
 
 
-def create_rolling_mean_features(df, features_name, feature_to_mean, features_grp, nb_shift):
+def create_rolling_mean_features(df, features_name, feature_to_mean, features_grp, nb_shift, reset_index=True):
     """
     function to create a rolling mean on "feature_to_mean" called "features_name" 
     groupby "features_grp" on "nb_shift" value
     Have to sort dataframe and re sort at the end
     """
-    df.reset_index(inplace=True)
+
+    if reset_index==True:
+        df.reset_index(inplace=True)
     df = df.sort_values(['station_id', 'ts'])
 
 
     # Create rolling features
     df[features_name] = df.groupby(features_grp)[feature_to_mean].apply(lambda x: x.rolling(window=nb_shift, min_periods=1).mean())
 
-    df = df.sort_values(['ts', 'station_id']) 
-    df = df.set_index('ts')
+    df = df.sort_values(['ts', 'station_id'])
+    if reset_index==True:
+        df = df.set_index('ts')
     return df
 
-def create_rolling_std_features(df, features_name, feature_to_std, features_grp, nb_shift):
+def create_rolling_std_features(df, features_name, feature_to_std, features_grp, nb_shift, reset_index=True):
     """
     function to create a rolling std on "feature_to_std" called "features_name" 
     groupby "features_grp" on "nb_shift" value
     Have to sort dataframe and re sort at the end
     """
-    
-    df.reset_index(inplace=True)
+    if reset_index==True:
+        df.reset_index(inplace=True)
     df = df.sort_values(['station_id', 'ts'])
 
 
@@ -503,7 +506,8 @@ def create_rolling_std_features(df, features_name, feature_to_std, features_grp,
     df[features_name] = df.groupby(features_grp)[feature_to_std].apply(lambda x: x.rolling(window=nb_shift, min_periods=1).std())
 
     df = df.sort_values(['ts', 'station_id']) 
-    df = df.set_index('ts')
+    if reset_index==True:
+        df = df.set_index('ts')
     return df
 
 
@@ -516,7 +520,6 @@ def create_ratio_filling_bike_on_bike(df, cluster_name):
     Merge the result with the DataFrame
     """
 
-    df = df.reset_index()
     # Total stand for station
     df['total_stand'] = df['nb_bikes'] + df['nb_stands']
 
@@ -632,8 +635,6 @@ def train_prediction_model(df, validation_date, frequency):
                                      nb_shift=9)
 
     logger.info("Split data into train / test dataset")
-
-
     train_test_split = prepare_data_for_training(df,
                                                  validation_date,
                                                  frequency=frequency,
@@ -675,16 +676,53 @@ def train_prediction_model(df, validation_date, frequency):
     n_train = len(train_X)
     df_all = pd.concat([train_X, test_X])
 
+    # df_all.tail()
+    #                      station_id  nb_bikes  nb_stands  is_open  day  hour  \
+    # ts
+    # 2018-05-29 23:20:00       10120       2.0       12.0      1.0    1    23
+    # 2018-05-29 23:20:00       10121      11.0        5.0      1.0    1    23
+    #              minute  is_holiday  was_recently_open    mean_6  \
+    # ts
+    # 2018-05-29 23:20:00      20           0               24.0  0.130952
+    # 2018-05-29 23:20:00      20           0               24.0  0.677083
+    #            std_9  cluster_activty  cluster_geo
+    # ts
+    # 2018-05-29 23:20:00  0.029161                2            4
+    # 2018-05-29 23:20:00  0.032940                2            4
+
+
+    # Ts index have to be use for create ratio to cluster
+    df_all = df_all.reset_index()
+
     logger.info("Create Ratio of bike dispo on cluster geo")
     df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_geo')
 
     logger.info("Create Ratio of bike dispo on cluster geo")
     df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_activty')
 
+    logger.info("Create mean transformation on ratio of bike on cluster geo")
+    df_all = create_rolling_mean_features(df_all, 
+                                     features_name='ratio_nb_bikes_cluster_geo_mean_6', 
+                                     feature_to_mean='ratio_nb_bikes_cluster_geo', 
+                                     features_grp='station_id', 
+                                     nb_shift=6,
+                                     reset_index=False)
+
+    logger.info("Create std transformation on ratio of bike on cluster activity")
+    df_all = create_rolling_std_features(df_all, 
+                                     features_name='ratio_nb_bikes_cluster_activty_std_6', 
+                                     feature_to_std='ratio_nb_bikes_cluster_activty', 
+                                     features_grp='station_id', 
+                                     nb_shift=6,
+                                     reset_index=False)
 
     # Cut df_all to give back train_X & test_X
     train_X = df_all[: n_train].copy()
     test_X = df_all[n_train:].copy()
+
+    #     # Resset Index after mean transformation 
+    # train_X.reset_index(inplace=True)
+    # test_X.reset_index(inplace=True)
 
     train_X.drop('ts', axis=1, inplace=True)
     test_X.drop('ts', axis=1, inplace=True)
