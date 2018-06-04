@@ -8,6 +8,7 @@ import daiquiri
 import numpy as np
 import pandas as pd
 from dateutil import parser
+from datetime import timedelta
 from workalendar.europe import France
 from sklearn.cluster import KMeans
 import xgboost as xgb
@@ -408,34 +409,51 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
 ###################################
 
 
-def get_summer_holiday(df):
+def get_public_holiday(df, count_day=None):
     """
-    Create bool for summer holiday
+    Calcul delta with the closest holiday (count_day before and after) on absolute
 
     Parameters
     ----------
     df : pandas.DataFrame
+    count_day : int : number of day we look for before and after a holiday
 
     Returns
     -------
     df : pandas.DataFrame
-    """
 
+    """
     df['date'] = df.ts.dt.date
     df['date'] = df['date'].astype('str')
 
     # Create DF with unique date (yyyy-mm-dd)
     date_df = pd.DataFrame(df.date.unique(), columns=['date'])
     date_df['date'] = date_df['date'].astype('str')
-
-    date_df['is_holiday'] = date_df['date'].apply(lambda x : parser.parse(x) < parser.parse("2017-09-04"))
-    date_df['is_holiday'] = date_df['is_holiday'].astype('int')
+    # Create bool
+    date_df['public_holiday'] = date_df.date.apply(lambda x: cal.is_holiday(parser.parse(x)))
+    date_df['public_holiday'] = date_df['public_holiday'].astype(int)
+    
+    # Calcul the delta between the last public_holiday == 1 (max count_day)
+    if count_day is not None:
+        logger.info("compute delta with  public holiday on '%s' days", count_day)
+        dt_list = []
+        for holyday_day in date_df[date_df.public_holiday == 1].date.unique():
+            for i in range(-count_day, count_day+1, 1):
+                new_date = parser.parse(holyday_day) + timedelta(days=i)
+                new_date_str = new_date.strftime("%Y-%m-%d")
+                dt_list.append({'date' : new_date_str,
+                                'public_holiday_count' : np.abs(i)})
+        # DataFrame
+        df_date_count = pd.DataFrame(dt_list)
+        # Merging
+        date_df = date_df.merge(df_date_count, on='date', how='left')
+        # Filling missing value
+        date_df['public_holiday_count'] = date_df['public_holiday_count'].fillna(0)
 
     #merging
     df = df.merge(date_df, on='date', how='left')
     df.drop('date', axis=1, inplace=True)
     return df
-
 
 def get_station_recently_closed(df, nb_hours=4):
     """
@@ -611,8 +629,11 @@ def train_prediction_model(df, validation_date, frequency):
     df = time_resampling(df)
     df = complete_data(df)
 
-    logger.info("Get summer holiday features")
-    df = get_summer_holiday(df)
+    # logger.info("Get summer holiday features")
+    # df = get_summer_holiday(df)
+
+    logger.info("Get public holiday features")
+    df = get_public_holiday(df, count_day=5)
 
     logger.info("Create recenlty open station indicator")
     df = get_station_recently_closed(df, nb_hours=4)
