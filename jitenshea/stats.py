@@ -33,8 +33,10 @@ XGB_PARAM ={"objective": "reg:logistic",
               "eta": 0.2,
               "max_depth": 9,
               "subsample":0.9,
+              "lambda" : 1,
               "silent": 1,
               "seed": SEED}
+NUM_ROUND = 40
 
 
 ###################################
@@ -455,6 +457,20 @@ def get_public_holiday(df, count_day=None):
     df.drop('date', axis=1, inplace=True)
     return df
 
+def create_bool_empty_full_station(df):
+    """
+    Create a bool features "warning_empty_full"
+    If bike <= 2 --> 1
+    If Proba >= 0.875 --> 1
+    else --> 0
+    """
+    
+    df['warning_empty_full'] = 0
+    df.loc[df['nb_bikes'] <= 2, 'warning_empty_full'] = 1
+    df.loc[df['probability'] >= 0.875, 'warning_empty_full'] = 1
+    
+    return df
+
 def get_station_recently_closed(df, nb_hours=4):
     """
     Create a indicator who check the number of periods the station was close during the nb_hours
@@ -595,10 +611,9 @@ def fit(train_X, train_Y, test_X, test_Y):
     xg_train = xgb.DMatrix(train_X, label=train_Y)
     xg_test = xgb.DMatrix(test_X, label=test_Y)
     watchlist = [(xg_train, 'train'), (xg_test, 'test')]
-    num_round = 25
     bst = xgb.train(params=XGB_PARAM,
                     dtrain=xg_train,
-                    num_boost_round=num_round,
+                    num_boost_round=NUM_ROUND,
                     evals=watchlist,
                     evals_result=training_progress)
     return bst, training_progress
@@ -634,6 +649,9 @@ def train_prediction_model(df, validation_date, frequency):
 
     logger.info("Get public holiday features")
     df = get_public_holiday(df, count_day=5)
+
+    logger.info("create bool empty full station")
+    df = create_bool_empty_full_station(df)
 
     logger.info("Create recenlty open station indicator")
     df = get_station_recently_closed(df, nb_hours=4)
