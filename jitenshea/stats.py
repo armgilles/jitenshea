@@ -34,7 +34,7 @@ CLUSTER_GEO_PATH_CSV ='jitenshea/data/cluster_geo.csv'
 XGB_PARAM ={"objective": "reg:logistic",
               "booster" : "gbtree",
               "eta": 0.2,
-              "max_depth": 9,
+              "max_depth": 8,
               "subsample":0.9,
               "silent": 1,
               "seed": SEED}
@@ -137,7 +137,7 @@ def read_cluster_activity(cluster_act_path_csv):
         print("Error : can't read cluster activite : ")
         print(e)
 
-def get_cluster_activity(cluster_act_path_csv, test, train=None):
+def get_cluster_activity(cluster_act_path_csv, val, test, train=None):
     """Get cluster activite csv from patch cluster_path_csv.
     Merge cluster with station_id
 
@@ -145,20 +145,23 @@ def get_cluster_activity(cluster_act_path_csv, test, train=None):
     ----------
     cluster_act_path_csv : String :
         Path to export df_labels DataFrame
+    val : pandas.DataFrame
     test : pandas.DataFrame
-
     train : pandas.DataFrame
 
     Returns
     -------
 
     If train is not None:
-        Return 2 pandas.DataFrame train, test
+        Return 3 pandas.DataFrame train, val, test
     Else:     
-        Return 1 pandas.DataFrame test
+        Return 2 pandas.DataFrame val, test
     """
 
     cluster_activite = read_cluster_activity(cluster_act_path_csv=cluster_act_path_csv)
+
+    val = val.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
+    val.drop('id_station', axis=1, inplace=True)
 
     test = test.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
     test.drop('id_station', axis=1, inplace=True)
@@ -166,9 +169,9 @@ def get_cluster_activity(cluster_act_path_csv, test, train=None):
     if len(train) > 0:
         train = train.merge(cluster_activite, left_on='station_id', right_on='id_station',  how='left')
         train.drop('id_station', axis=1, inplace=True)
-        return train, test
+        return train, val, test
     else:
-        return test
+        return val, test
 
 
 ### CLUSTER GEO
@@ -242,7 +245,7 @@ def read_cluster_geo(cluster_geo_path_csv):
         print("Error : can't read cluster geo : ")
         print(e)
 
-def get_cluster_geo(cluster_geo_path_csv, test, train=None):
+def get_cluster_geo(cluster_geo_path_csv, val, test, train=None):
     """Get cluster activite csv from patch cluster_geo_path_csv.
     Merge cluster with station_id
 
@@ -250,20 +253,23 @@ def get_cluster_geo(cluster_geo_path_csv, test, train=None):
     ----------
     cluster_path_csv : String :
         Path to export df_labels DataFrame
+    val : pandas.DataFrame
     test : pandas.DataFrame
-
     train : pandas.DataFrame
 
     Returns
     -------
 
     If train is not None:
-        Return 2 pandas.DataFrame train, test
+        Return 3 pandas.DataFrame train, val, test
     Else:     
-        Return 1 pandas.DataFrame test
+        Return 2 pandas.DataFrame val, test
     """
 
     cluster_geo = read_cluster_geo(cluster_geo_path_csv=cluster_geo_path_csv)
+
+    val = val.merge(cluster_geo, left_on='station_id', right_on='id_station',  how='left')
+    val.drop('id_station', axis=1, inplace=True)
 
     test = test.merge(cluster_geo, left_on='station_id', right_on='id_station',  how='left')
     test.drop('id_station', axis=1, inplace=True)
@@ -271,9 +277,9 @@ def get_cluster_geo(cluster_geo_path_csv, test, train=None):
     if len(train) > 0:
         train = train.merge(cluster_geo, left_on='station_id', right_on='id_station',  how='left')
         train.drop('id_station', axis=1, inplace=True)
-        return train, test
+        return train, val, test
     else:
-        return test
+        return val, test
 
 
 
@@ -369,15 +375,17 @@ def add_future(df, frequency):
     df.reset_index(level=1, inplace=True)
     return df
 
-def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
+def prepare_data_for_training(df, validation_date, test_date, frequency='1H', start=None, periods=1):
     """Prepare data for training
 
     Parameters
     ----------
     df : pd.DataFrame
         Input data; must contains a "future" column and a `datetime` index
-    date : date.datetime
-        Date for the prediction
+    validation_date : date.datetime
+        Date for cut the train set into validation set
+    test_date : date.datetime
+        Date for cut the train set into test set 
     frequency : str
         Delay between the training and validation set; corresponds to
     prediction frequency
@@ -389,26 +397,33 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
     Returns
     -------
     tuple of 4 pandas.DataFrames
-        two for training, two for testing (train_X, train_Y, test_X, test_Y)
+        two for training, two for testing (train_X, train_Y, val_X, val_Y, test_X, test_Y)
     """
     logger.info("Split train and test according to a validation date")
-    cut = date - pd.Timedelta(frequency.replace('T', 'm'))
-    stop = date + periods * pd.Timedelta(frequency.replace('T', 'm'))
+    cut = validation_date - pd.Timedelta(frequency.replace('T', 'm'))
+    stop = validation_date + periods * pd.Timedelta(frequency.replace('T', 'm'))
     if start is not None:
         df = df[df.index >= start]
     logger.info("Data shape after start cut: %s", df.shape)
-    train = df[df.index <= cut].copy()
+    train = df[df.index <= validation_date].copy()
     logger.info("Data shape after prediction date cut: %s", train.shape)
     train_X = train.drop(["probability", "future"], axis=1)
     train_Y = train['future'].copy()
-    # time window
-    test = df[df.index >= stop].copy()
+    
+
+    # Splitting dateset into validation and test set on time windows
+    val = df[(df.index > validation_date) & (df.index <= test_date)].copy()
+    val_X = val.drop(["probability", "future"], axis=1)
+    val_Y = val['future'].copy()
+
+    test = df[df.index > test_date].copy()
     test_X = test.drop(["probability", "future"], axis=1)
     test_Y = test['future'].copy()
 
-    logger.info("Train min date : %s and max date : %s", train_X.index.min(), train_X.index.max())
-    logger.info("Test min date : %s and max date : %s", test_X.index.min(), test_X.index.max())
-    return train_X, train_Y, test_X, test_Y
+    logger.info("Train min date : %s / max date : %s - %s in total for %s rows", train_X.index.min(), train_X.index.max(), train_X.index.max() - train_X.index.min(), len(train_X))
+    logger.info("Valdation min date : %s / max date : %s - %s in total for %s rows", val_X.index.min(), val_X.index.max(), val_X.index.max() - val_X.index.min(), len(val_X))
+    logger.info("Test min date : %s / max date : %s - %s in total for %s rows", test_X.index.min(), test_X.index.max(), test_X.index.max() - test_X.index.min(), len(test_X))
+    return train_X, train_Y, val_X, val_Y, test_X, test_Y
 
 
 ###################################
@@ -734,7 +749,41 @@ def fit(train_X, train_Y, test_X, test_Y):
     return bst, training_progress
 
 
-def train_prediction_model(df, validation_date, frequency):
+def rmse(y_true, y_pred):
+        """Compute RMSE score
+    Parameters
+    ----------
+    y_true : pandas.Serie
+    y_pred : pandas.Serie
+
+    Returns
+    -------
+    rmse : Float
+    """
+        rmse = np.sqrt(np.mean((y_pred - y_true)**2))
+        return rmse
+
+def score_model(model, test_X, test_Y):
+    """Predict on test_X with model 
+            Score the prediction with reality (test_Y) RMSE
+    Parameters
+    ----------
+    model : Xgboost model
+    test_X : pandas.DataFrame
+        test set with features
+    test_Y : pandas.Series
+
+    Returns
+    -------
+    None
+    """
+    y_pred = model.predict(xgb.DMatrix(test_X))
+    rmse_score = rmse(test_Y, y_pred)
+    
+    print("RMSE score model on Test set is {}".format(rmse_score))
+
+
+def train_prediction_model(df, validation_date, test_date, frequency):
     """Train a XGBoost model on `df` data with a train/validation split given
     by `predict_date` starting from temporal information (time of the day, day
     of the week) and previous bike availability
@@ -747,6 +796,8 @@ def train_prediction_model(df, validation_date, frequency):
     validation_date : datetime.date
         Reference date to split the input data between training and validation
     sets
+    test_date : datetime.date
+        Reference date to split the input data between training and test sets
     frequency : DateOffset, timedelta or str
         Indicates the prediction frequency
 
@@ -802,10 +853,11 @@ def train_prediction_model(df, validation_date, frequency):
     logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
                                                  validation_date,
+                                                 test_date,
                                                  frequency=frequency,
                                                  start=df.index.min(),
                                                  periods=2)
-    train_X, train_Y, test_X, test_Y = train_test_split
+    train_X, train_Y, val_X, val_Y, test_X, test_Y = train_test_split
 
 #     train_X.tail()
 #                         station_id  nb_bikes  nb_stands  is_open  day  hour  \
@@ -815,28 +867,32 @@ def train_prediction_model(df, validation_date, frequency):
 
     # Keep TS's index in memory
     train_index = train_X.index
+    val_index = val_X.index
     test_index = test_X.index
 
     logger.info("Cluster activity label")
     #Create cluster activity
     compute_act_clusters(train_X.reset_index(), cluster_act_path_csv=CLUSTER_ACT_PATH_CSV)
     # Merge result of cluster activite
-    train_X, test_X = get_cluster_activity(CLUSTER_ACT_PATH_CSV, test_X, train_X)
+    train_X, val_X, test_X = get_cluster_activity(CLUSTER_ACT_PATH_CSV, val_X, test_X, train_X)
 
     logger.info("Cluster geo label")
     # Create cluster geo
     compute_geo_clusters(cluster_geo_path_csv=CLUSTER_GEO_PATH_CSV)
     # Merge result of cluster activite
-    train_X, test_X = get_cluster_geo(CLUSTER_GEO_PATH_CSV, test_X, train_X)
+    train_X, val_X, test_X = get_cluster_geo(CLUSTER_GEO_PATH_CSV, val_X, test_X, train_X)
 
-    # # Give back TS index in train_X & test_X
+    # Give back TS index in train_X, val_X & test_X
     train_X.set_index(train_index, inplace=True)
+    val_X.set_index(val_index, inplace=True)
     test_X.set_index(test_index, inplace=True)
 
 
     # Have to concat X_train & X_test to calculate rolling windows ratio
     n_train = len(train_X)
-    df_all = pd.concat([train_X, test_X])
+    n_val = len(val_X)
+    n_test = len(test_X)
+    df_all = pd.concat([train_X, val_X, test_X])
 
     # df_all.tail()
     #                      station_id  nb_bikes  nb_stands  is_open  day  hour  \
@@ -880,12 +936,18 @@ def train_prediction_model(df, validation_date, frequency):
 
     # Cut df_all to give back train_X & test_X
     train_X = df_all[: n_train].copy()
-    test_X = df_all[n_train:].copy()
+    val_X = df_all[n_train: n_train + n_val].copy()
+    test_X = df_all.tail(n_test).copy()
 
 
     train_X.drop('ts', axis=1, inplace=True)
+    val_X.drop('ts', axis=1, inplace=True)
     test_X.drop('ts', axis=1, inplace=True)
 
 
-    trained_model = fit(train_X, train_Y, test_X, test_Y)
-    return trained_model[0], train_X, train_Y, test_X, test_Y
+    trained_model = fit(train_X, train_Y, val_X, val_Y)
+    model = trained_model[0]
+
+    score_model(model, test_X, test_Y)
+
+    return trained_model[0], train_X, train_Y, val_X, val_Y, test_X, test_Y
