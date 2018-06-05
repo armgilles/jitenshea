@@ -33,7 +33,6 @@ XGB_PARAM ={"objective": "reg:logistic",
               "eta": 0.2,
               "max_depth": 9,
               "subsample":0.9,
-              "lambda" : 1,
               "silent": 1,
               "seed": SEED}
 NUM_ROUND = 40
@@ -544,6 +543,25 @@ def create_rolling_std_features(df, features_name, feature_to_std, features_grp,
         df = df.set_index('ts')
     return df
 
+def create_rolling_median_features(df, features_name, feature_to_median, features_grp, nb_shift, reset_index=True):
+    """
+    function to create a rolling median on "feature_to_median" called "features_name" 
+    groupby "features_grp" on "nb_shift" value
+    Have to sort dataframe and re sort at the end
+    """
+    if reset_index==True:
+        df['ts'] = df.index
+    df = df.sort_values(['station_id', 'ts'])
+
+
+    # Create rolling features
+    df[features_name] = df.groupby(features_grp)[feature_to_median].apply(lambda x: x.rolling(window=nb_shift, min_periods=1).median())
+
+    df = df.sort_values(['ts', 'station_id'])
+    if reset_index==True:
+        df = df.set_index('ts')
+    return df
+
 
 def create_ratio_filling_bike_on_bike(df, cluster_name):
     """
@@ -576,6 +594,33 @@ def create_ratio_filling_bike_on_bike(df, cluster_name):
     # Merge with df
     df = df.merge(grp_features_geo_cluster, on=['ts', cluster_name], how='left')
     #df = df.drop('total_stand', axis=1)
+    return df
+
+
+def interaction_features(a, b, df):
+    """
+    Create interaction between 2 features (a and b)
+    Return :
+     - Minus (a-b)
+     - multiply (a*b)
+     - ratio (a/b)    
+    """
+    
+    ## Minus
+    minus_label = a+'_minus_'+b
+    df[minus_label] = df[a] - df[b]
+    
+    ## Multiply
+    milty_label = a+'_multi_'+b
+    df[milty_label] = df[a] * df[b]
+    
+    ## Ratio 
+    ratio_label = a+'_ratio_'+b
+    df[ratio_label] = df[a] / df[b]
+
+    # For inf value
+    df[ratio_label] = df[ratio_label].replace(np.inf, 0)
+    
     return df
 
 
@@ -672,6 +717,17 @@ def train_prediction_model(df, validation_date, frequency):
                                      feature_to_std='probability', 
                                      features_grp='station_id', 
                                      nb_shift=9)
+
+    logger.info("Create median transformation")
+    df = create_rolling_median_features(df, 
+                                         features_name='median_6', 
+                                         feature_to_median='probability', 
+                                         features_grp='station_id', 
+                                         nb_shift=6)
+
+
+    # logger.info("Create interaction features with 'mean_6' and 'std_9' ")
+    # df = interaction_features('mean_6', 'std_9', df)
 
     logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
