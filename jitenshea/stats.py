@@ -21,6 +21,7 @@ logger = daiquiri.getLogger("stats")
 # French Calendar
 cal = France()
 
+# Reproductivity
 SEED = 2018
 np.random.seed(SEED)
 
@@ -28,6 +29,8 @@ LYON_STATION_PATH_CSV = 'jitenshea/data/lyon-stations.csv'
 CLUSTER_ACT_PATH_CSV ='jitenshea/data/cluster_activite.csv'
 CLUSTER_GEO_PATH_CSV ='jitenshea/data/cluster_geo.csv'
 
+
+# Xgboost parameter
 XGB_PARAM ={"objective": "reg:logistic",
               "booster" : "gbtree",
               "eta": 0.2,
@@ -116,7 +119,7 @@ def compute_act_clusters(df, cluster_act_path_csv=None):
 
 def read_cluster_activity(cluster_act_path_csv):
     """
-    Read cluster activite csv
+    Read cluster activity csv
 
     Parameters
     -------
@@ -402,6 +405,9 @@ def prepare_data_for_training(df, date, frequency='1H', start=None, periods=1):
     test = df[df.index >= stop].copy()
     test_X = test.drop(["probability", "future"], axis=1)
     test_Y = test['future'].copy()
+
+    logger.info("Train min date : %s and max date : %s", train_X.index.min(), train_X.index.max())
+    logger.info("Test min date : %s and max date : %s", test_X.index.min(), test_X.index.max())
     return train_X, train_Y, test_X, test_Y
 
 
@@ -459,9 +465,17 @@ def get_public_holiday(df, count_day=None):
 def create_bool_empty_full_station(df):
     """
     Create a bool features "warning_empty_full"
-    If bike <= 2 --> 1
+    If nb_bike <= 2 --> 1
     If Proba >= 0.875 --> 1
     else --> 0
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+
+    Returns
+    -------
+    df : pandas.DataFrame
     """
     
     df['warning_empty_full'] = 0
@@ -509,6 +523,21 @@ def create_rolling_mean_features(df, features_name, feature_to_mean, features_gr
     function to create a rolling mean on "feature_to_mean" called "features_name" 
     groupby "features_grp" on "nb_shift" value
     Have to sort dataframe and re sort at the end
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    features_name : string - Name of the new feature
+    feature_to_median : string - Name of the feature to aggregate
+    features_grp : string - Name of the feature to groupby
+    nb_shift : int - Number of point to use to rolling aggregate
+    reset_index : Bool (opt) - To reset_index in the beginning of the function and at the end
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
     """
 
     if reset_index==True:
@@ -529,6 +558,21 @@ def create_rolling_std_features(df, features_name, feature_to_std, features_grp,
     function to create a rolling std on "feature_to_std" called "features_name" 
     groupby "features_grp" on "nb_shift" value
     Have to sort dataframe and re sort at the end
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    features_name : string - Name of the new feature
+    feature_to_median : string - Name of the feature to aggregate
+    features_grp : string - Name of the feature to groupby
+    nb_shift : int - Number of point to use to rolling aggregate
+    reset_index : Bool (opt) - To reset_index in the beginning of the function and at the end
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
     """
     if reset_index==True:
         df.reset_index(inplace=True)
@@ -548,6 +592,21 @@ def create_rolling_median_features(df, features_name, feature_to_median, feature
     function to create a rolling median on "feature_to_median" called "features_name" 
     groupby "features_grp" on "nb_shift" value
     Have to sort dataframe and re sort at the end
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    features_name : string - Name of the new feature
+    feature_to_median : string - Name of the feature to aggregate
+    features_grp : string - Name of the feature to groupby
+    nb_shift : int - Number of point to use to rolling aggregate
+    reset_index : Bool (opt) - To reset_index in the beginning of the function and at the end
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
     """
     if reset_index==True:
         df['ts'] = df.index
@@ -568,8 +627,19 @@ def create_ratio_filling_bike_on_bike(df, cluster_name):
     Get filling bike station on station cluster_name (geo or activity)
     Calcul number of total stand on cluster_name / time
     Calcul number of bike on cluster_name / time
-    Create ratio on total stand and bike on station on cluster_name
+    Create ratio on total nb_stand and nb_bike on station on cluster_name
     Merge the result with the DataFrame
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    cluster_name : string - Name of the cluster to groupby
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
     """
 
     # Total stand for station
@@ -759,9 +829,6 @@ def train_prediction_model(df, validation_date, frequency):
     # Merge result of cluster activite
     train_X, test_X = get_cluster_geo(CLUSTER_GEO_PATH_CSV, test_X, train_X)
 
-    #Some bad move when cure train_X & test_X (sorting ?)
-    # triaining can't learn...
-
     # # Give back TS index in train_X & test_X
     train_X.set_index(train_index, inplace=True)
     test_X.set_index(test_index, inplace=True)
@@ -792,7 +859,7 @@ def train_prediction_model(df, validation_date, frequency):
     logger.info("Create Ratio of bike dispo on cluster geo")
     df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_geo')
 
-    logger.info("Create Ratio of bike dispo on cluster geo")
+    logger.info("Create Ratio of bike dispo on cluster activity")
     df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_activty')
 
     logger.info("Create mean transformation on ratio of bike on cluster geo")
@@ -815,9 +882,6 @@ def train_prediction_model(df, validation_date, frequency):
     train_X = df_all[: n_train].copy()
     test_X = df_all[n_train:].copy()
 
-    #     # Resset Index after mean transformation 
-    # train_X.reset_index(inplace=True)
-    # test_X.reset_index(inplace=True)
 
     train_X.drop('ts', axis=1, inplace=True)
     test_X.drop('ts', axis=1, inplace=True)
