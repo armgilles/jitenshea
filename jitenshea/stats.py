@@ -788,16 +788,16 @@ def train_prediction_model(df, validation_date, frequency):
                                      features_grp='station_id', 
                                      nb_shift=9)
 
-    logger.info("Create median transformation")
-    df = create_rolling_median_features(df, 
-                                         features_name='median_6', 
-                                         feature_to_median='probability', 
-                                         features_grp='station_id', 
-                                         nb_shift=6)
+    # logger.info("Create median transformation")
+    # df = create_rolling_median_features(df, 
+    #                                      features_name='median_6', 
+    #                                      feature_to_median='probability', 
+    #                                      features_grp='station_id', 
+    #                                      nb_shift=6)
 
 
-    # logger.info("Create interaction features with 'mean_6' and 'std_9' ")
-    # df = interaction_features('mean_6', 'std_9', df)
+    # logger.info("Create interaction features with 'mean_6' and 'median_6' ")
+    # df = interaction_features('mean_6', 'median_6', df)
 
     logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
