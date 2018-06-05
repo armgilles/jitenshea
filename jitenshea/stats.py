@@ -14,6 +14,7 @@ from sklearn.cluster import KMeans
 import xgboost as xgb
 
 from jitenshea import config
+from jitenshea.utils_calendar import *
 
 daiquiri.setup(logging.INFO)
 logger = daiquiri.getLogger("stats")
@@ -421,7 +422,7 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
     test_Y = test['future'].copy()
 
     logger.info("Train min date : %s / max date : %s - %s in total for %s rows", train_X.index.min(), train_X.index.max(), train_X.index.max() - train_X.index.min(), len(train_X))
-    logger.info("Valdation min date : %s / max date : %s - %s in total for %s rows", val_X.index.min(), val_X.index.max(), val_X.index.max() - val_X.index.min(), len(val_X))
+    logger.info("Validation min date : %s / max date : %s - %s in total for %s rows", val_X.index.min(), val_X.index.max(), val_X.index.max() - val_X.index.min(), len(val_X))
     logger.info("Test min date : %s / max date : %s - %s in total for %s rows", test_X.index.min(), test_X.index.max(), test_X.index.max() - test_X.index.min(), len(test_X))
     return train_X, train_Y, val_X, val_Y, test_X, test_Y
 
@@ -433,7 +434,7 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
 
 def get_public_holiday(df, count_day=None):
     """
-    Calcul delta with the closest holiday (count_day before and after) on absolute
+    Calcul delta with the closest public holiday (count_day before and after) on absolute
 
     Parameters
     ----------
@@ -476,6 +477,44 @@ def get_public_holiday(df, count_day=None):
     df = df.merge(date_df, on='date', how='left')
     df.drop('date', axis=1, inplace=True)
     return df
+
+def get_school_holiday(df):
+    """
+    Get or load school holiday calendar for a particular city (school zone)
+    to get a bool features for school holiday
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+
+    Returns
+    -------
+    df : pandas.DataFrame
+    """
+
+    df['date'] = df.ts.dt.date
+    df['date'] = df['date'].astype('str')
+
+    # TO DO Change for prod
+    CITY = 'lyon'
+
+    zone = get_zone_by_city(CITY)
+    zone_holiday = get_holiday(zone)
+
+    list_extra_holiday = create_extra_holiday(zone_holiday)
+
+
+    date_df = pd.DataFrame(df.date.unique(), columns=['date'])
+    date_df['date'] = date_df['date'].astype('str')
+
+    date_df['school_holiday'] = date_df.date.apply(lambda x: cal.is_holiday(parser.parse(x), extra_holidays=list_extra_holiday))
+    date_df['school_holiday'] = date_df['school_holiday'].astype(int)
+
+    #merging
+    df = df.merge(date_df, on='date', how='left')
+    df.drop('date', axis=1, inplace=True)
+    return df
+
 
 def create_bool_empty_full_station(df):
     """
@@ -810,11 +849,11 @@ def train_prediction_model(df, validation_date, test_date, frequency):
     df = time_resampling(df)
     df = complete_data(df)
 
-    # logger.info("Get summer holiday features")
-    # df = get_summer_holiday(df)
-
     logger.info("Get public holiday features")
     df = get_public_holiday(df, count_day=5)
+
+    logger.info("Get school holiday features")
+    df = get_school_holiday(df)
 
     logger.info("create bool empty full station")
     df = create_bool_empty_full_station(df)
@@ -928,7 +967,7 @@ def train_prediction_model(df, validation_date, test_date, frequency):
 
     logger.info("Create std transformation on ratio of bike on cluster activity")
     df_all = create_rolling_std_features(df_all, 
-                                     features_name='ratio_nb_bikes_cluster_activty_std_6', 
+                                     features_name='ratio_nb_bikes_cluster_activity_std_6', 
                                      feature_to_std='ratio_nb_bikes_cluster_activty', 
                                      features_grp='station_id', 
                                      nb_shift=6,
