@@ -989,4 +989,4 @@ def train_prediction_model(df, validation_date, test_date, frequency):
 
     score_model(model, test_X, test_Y)
 
-    return trained_model[0], train_X, train_Y, val_X, val_Y, test_X, test_Y
+    return trained_model[0], train_X, train_Y, val_X, val_Y, test_X, test_Y,train_index, val_index, test_index
