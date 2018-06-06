@@ -676,7 +676,7 @@ def create_rolling_median_features(df, features_name, feature_to_median, feature
     return df
 
 
-def create_ratio_filling_bike_on_bike(df, cluster_name):
+def create_ratio_filling_bike_on_cluster(df, cluster_name):
     """
     Get filling bike station on station cluster_name (geo or activity)
     Calcul number of total stand on cluster_name / time
@@ -952,10 +952,10 @@ def train_prediction_model(df, validation_date, test_date, frequency):
     df_all = df_all.reset_index()
 
     logger.info("Create Ratio of bike dispo on cluster geo")
-    df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_geo')
+    df_all = create_ratio_filling_bike_on_cluster(df_all, 'cluster_geo')
 
     logger.info("Create Ratio of bike dispo on cluster activity")
-    df_all = create_ratio_filling_bike_on_bike(df_all, 'cluster_activty')
+    df_all = create_ratio_filling_bike_on_cluster(df_all, 'cluster_activty')
 
     logger.info("Create mean transformation on ratio of bike on cluster geo")
     df_all = create_rolling_mean_features(df_all, 
