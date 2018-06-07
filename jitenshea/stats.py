@@ -545,6 +545,31 @@ def create_bool_empty_full_station(df):
     
     return df
 
+def tag_unnatural_bike_evolution(df):
+    """
+
+    """
+
+    # Resorting DataFrame on station_id & ts
+    df.reset_index(inplace=True)
+    df = df.sort_values(['station_id', 'ts'])
+
+    # Re create probability
+    df = bikes_probability(df)
+
+    # Create shift value (n-1 value on probability)
+    df = df.set_index(["ts", "station_id"])
+    label = df["probability"].copy()
+    label.name = "probability_shift"
+    label = (label.reset_index(level=1)
+             .shift(1)
+             .reset_index()
+             .set_index(["ts", "station_id"]))
+    logger.info("Merge future data with current observations")
+    df = df.merge(label, left_index=True, right_index=True)
+    df.reset_index(level=1, inplace=True)
+
+
 def get_station_recently_closed(df, nb_hours=4):
     """
     Create a indicator who check the number of periods the station was close during the nb_hours
@@ -983,6 +1008,8 @@ def train_prediction_model(df, validation_date, test_date, frequency):
 
     # logger.info("Create interaction features with 'mean_6' and 'median_6' ")
     # df = interaction_features('mean_6', 'median_6', df)
+
+    return df
 
     logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
