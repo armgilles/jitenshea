@@ -11,6 +11,8 @@ from dateutil import parser
 from datetime import timedelta
 from workalendar.europe import France
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import LabelEncoder
+from sklearn.externals import joblib
 import xgboost as xgb
 
 from jitenshea import config
@@ -26,6 +28,11 @@ cal = France()
 SEED = 2018
 np.random.seed(SEED)
 
+DATA_DIR_WEATHER = 'jitenshea/data/'
+WEATHER_NAME_FILE = 'weather-2018-02-2018-05.csv'
+FORECAST_NAME_FILE = 'forecast-2018-02-2018-05.csv'
+
+MODEL_DIR = 'jitenshea/data/'
 LYON_STATION_PATH_CSV = 'jitenshea/data/lyon-stations.csv'
 CLUSTER_ACT_PATH_CSV ='jitenshea/data/cluster_activite.csv'
 CLUSTER_GEO_PATH_CSV ='jitenshea/data/cluster_geo.csv'
@@ -747,6 +754,94 @@ def interaction_features(a, b, df):
     
     return df
 
+def get_weather(df, how='learning', freq=None):
+    """
+    Match timeseries with weather data.
+    df : [Dataframe]
+    
+    freq : Timedelta ex : "1H"
+
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    how : string - historical data or forcasting data
+        If how == learning :
+            Matching with historitical data weather
+        if how == forcast :
+            Matching with forcast data. Freq must be fill with this opton
+    freq : Timedelta ex : "1H"
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
+    """
+
+    # Check params
+    if how not in ['learning', 'forecast']:
+        logger.error('Bad option for get_weather. You must choose between learning or forecast')
+        return df
+
+    if how == 'forecast' and freq is None:
+        logger.error("For forecast option, we must specify freq. Ex freq='1H'")
+
+
+    # Process for learning matching
+    if how == 'learning':
+        weather = pd.read_csv(DATA_DIR_WEATHER+WEATHER_NAME_FILE, parse_dates=['date'])
+        weather.rename(columns={'date':'ts'}, inplace=True)
+
+        # have to labelencode weather_desc
+        LE = LabelEncoder()
+        weather['weather_desc'] = LE.fit_transform(weather['weather_desc'])
+
+        # Dump LabelEncoder
+        joblib.dump(LE, MODEL_DIR+'Label_Encoder_Weather_lyon.pkl')
+
+        # Merge on the last weather date know
+        df = pd.merge_asof(left=df, right=weather[['ts','temp', 'humidity', 'weather_desc', 'cloudiness']], on='ts', direction='backward')
+        
+        return df
+
+    # Process for forecast matching
+    if how == 'forecast':
+
+        time_freq = pd.Timedelta(freq.replace('T', 'm'))
+
+        forecast = pd.read_csv(DATA_DIR_WEATHER+FORECAST_NAME_FILE, parse_dates=['forecast_at', 'ts'])
+        forecast['delta'] = forecast['ts'] - forecast['forecast_at']
+
+        # Find nearest value in delta with our freq
+        nearest_freq = find_nearest(forecast.delta.unique(), time_freq)
+
+        # Filter on delta with freq
+        forecast = forecast[forecast['delta'] == nearest_freq]
+        forecast.drop_duplicates(subset=['ts', 'delta'], keep='first', inplace=True)
+        
+        # Label encode weather_desc
+        LE = joblib.load(MODEL_DIR+'Label_Encoder_Weather_lyon.pkl') 
+        forecast['weather_desc'] = LE.transform(forecast['weather_desc'])
+
+        #Merging
+        # We take the last forecast (on freq) using backward merging
+        df = df.sort_values('ts')
+        df_index_save = df.index # Savind index merge will destroy it
+        df = pd.merge_asof(left=df, right=forecast[['ts','temp', 'humidity', 'weather_desc', 'cloudiness']], on='ts', direction='backward')
+        df.index = df_index_save
+
+        # Resorting as originaly (to don't loose y_test order)
+        df = df.sort_index()
+        return df
+
+def find_nearest(array, value):
+    """
+    Only use in get_weather function to find the rearest value of a delta value in an array
+    """
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx]
 
 ###################################
 ###         ALGO
@@ -977,6 +1072,12 @@ def train_prediction_model(df, validation_date, test_date, frequency):
     train_X = df_all[: n_train].copy()
     val_X = df_all[n_train: n_train + n_val].copy()
     test_X = df_all.tail(n_test).copy()
+
+
+    logger.info("Get weather information and forecast")
+    train_X = get_weather(train_X, how='learning')
+    val_X = get_weather(val_X, how='forecast', freq=frequency)
+    test_X = get_weather(test_X, how='forecast', freq=frequency)
 
 
     train_X.drop('ts', axis=1, inplace=True)
