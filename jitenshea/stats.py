@@ -419,17 +419,17 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
     logger.info("Data shape after start cut: %s", df.shape)
     train = df[df.index <= validation_date].copy()
     logger.info("Data shape after prediction date cut: %s", train.shape)
-    train_X = train.drop(["probability", "future"], axis=1)
+    train_X = train.drop(["future"], axis=1)
     train_Y = train['future'].copy()
     
 
     # Splitting dateset into validation and test set on time windows
     val = df[(df.index > validation_date) & (df.index <= test_date)].copy()
-    val_X = val.drop(["probability", "future"], axis=1)
+    val_X = val.drop(["future"], axis=1)
     val_Y = val['future'].copy()
 
     test = df[df.index > test_date].copy()
-    test_X = test.drop(["probability", "future"], axis=1)
+    test_X = test.drop(["future"], axis=1)
     test_Y = test['future'].copy()
 
     logger.info("Train min date : %s / max date : %s - %s in total for %s rows", train_X.index.min(), train_X.index.max(), train_X.index.max() - train_X.index.min(), len(train_X))
