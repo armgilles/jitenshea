@@ -420,17 +420,17 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
     train = df[df.index <= validation_date].copy()
     logger.info("Data shape after prediction date cut: %s", train.shape)
     train_X = train.drop(["future"], axis=1)
-    train_Y = train['future'].copy()
+    train_Y = train['future'].reset_index(drop=True).copy()
     
 
     # Splitting dateset into validation and test set on time windows
     val = df[(df.index > validation_date) & (df.index <= test_date)].copy()
     val_X = val.drop(["future"], axis=1)
-    val_Y = val['future'].copy()
+    val_Y = val['future'].reset_index(drop=True).copy()
 
     test = df[df.index > test_date].copy()
     test_X = test.drop(["future"], axis=1)
-    test_Y = test['future'].copy()
+    test_Y = test['future'].reset_index(drop=True).copy()
 
     logger.info("Train min date : %s / max date : %s - %s in total for %s rows", train_X.index.min(), train_X.index.max(), train_X.index.max() - train_X.index.min(), len(train_X))
     logger.info("Validation min date : %s / max date : %s - %s in total for %s rows", val_X.index.min(), val_X.index.max(), val_X.index.max() - val_X.index.min(), len(val_X))
@@ -892,6 +892,73 @@ def find_nearest(array, value):
     idx = (np.abs(array - value)).argmin()
     return array[idx]
 
+def drop_non_usefull_features(df, features_to_drop=[]):
+    """
+    
+    Drop non usefull features before trainning (like datetime or others)
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    features_to_drop : List - list of features names
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
+    """
+
+    if len(features_to_drop) == 0:
+        return df
+    else:
+        df.drop(features_to_drop, axis=1, inplace=True)
+        return df
+
+
+def calcul_probability_diff(df):
+    """
+    calcul probability diff on absolute (n-1 - n)
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+
+    Returns
+    -------
+
+    df : pandas.DataFrame
+    """
+
+    df['prob_diff'] = np.abs(df['probability_shift'] - df['probability'])
+
+    return df
+    
+
+def get_mask_anomaly_activity(df, threshold=0.5):
+    """
+    
+    Spot activity anomaly (abs(n-1 - n) >= threshold)
+    Return only normal activity
+
+    Parameters
+    ----------
+
+    df : pandas.DataFrame
+    threshold : float - [0 - 1] threshold to spot anomaly activity
+
+    Returns
+    -------
+
+    anomaly_mak : numpy ndarray
+    """
+
+    anomaly_mask = np.logical_not(df.prob_diff >= threshold)
+
+    return anomaly_mask
+
+
 ###################################
 ###         ALGO
 ###################################
@@ -1038,6 +1105,9 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     logger.info("Get last probability known (n-1)")
     df = get_last_target(df)
 
+    logger.info("Get absolute difference between last probability and actual")
+    df = calcul_probability_diff(df)
+
     logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
                                                  validation_date,
@@ -1127,7 +1197,6 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     val_X = df_all[n_train: n_train + n_val].copy()
     test_X = df_all.tail(n_test).copy()
 
-
     logger.info("Get weather information and forecast")
     # Exact weather for learning
     train_X = get_weather(train_X, how='learning')
@@ -1136,12 +1205,20 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     test_X = get_weather(test_X, how='forecast', freq=frequency)
 
 
+    logger.info("Spot anomaly activity in Train Dataset")
+    anomaly_mask = get_mask_anomaly_activity(train_X)
+
+    logger.info("Drop some not usefull features before training session")
+    
+    # train_X = drop_non_usefull_features(train_X, features_to_drop=['ts', 'prob_diff'])
+    # val_X = drop_non_usefull_features(val_X, features_to_drop=['ts', 'prob_diff'])
+    # train_X = drop_non_usefull_features(val_X, features_to_drop=['ts', 'prob_diff'])
+
     train_X.drop('ts', axis=1, inplace=True)
     val_X.drop('ts', axis=1, inplace=True)
     test_X.drop('ts', axis=1, inplace=True)
 
-
-    trained_model = fit(train_X, train_Y, val_X, val_Y)
+    trained_model = fit(train_X[anomaly_mask], train_Y[anomaly_mask], val_X, val_Y)
     model = trained_model[0]
 
     score_model(model, test_X, test_Y)
