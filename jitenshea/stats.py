@@ -297,7 +297,7 @@ def get_cluster_geo(cluster_geo_path_csv, val, test, train=None):
 ###################################
 
 
-def time_resampling(df, freq="10T"):
+def time_resampling(df, bin_resampling="10T"):
     """Normalize the timeseries by resampling its timestamps. 
         Transforme "status" into numerical "is_open" Bool
 
@@ -305,7 +305,7 @@ def time_resampling(df, freq="10T"):
     ----------
     df : pandas.DataFrame
         Input data, contains columns `ts`, `nb_bikes`, `nb_stands`, `station_id`
-    freq : str
+    bin_resampling : str
         Time resampling frequency
 
     Returns
@@ -316,13 +316,13 @@ def time_resampling(df, freq="10T"):
 
 
 
-    logger.info("Time resampling for each station by '%s'", freq)
+    logger.info("Time resampling for each station by '%s'", bin_resampling)
 
     df['is_open'] = 0
     df.loc[df['status'] == "OPEN", 'is_open'] = 1
 
     df = (df.groupby("station_id")
-          .resample(freq, on="ts")[["ts", "nb_bikes", "nb_stands", "is_open", "probability"]]
+          .resample(bin_resampling, on="ts")[["ts", "nb_bikes", "nb_stands", "is_open", "probability"]]
           .mean()
           .bfill())
     return df.reset_index()
@@ -380,7 +380,11 @@ def add_future(df, frequency):
              .set_index(["ts", "station_id"]))
     logger.info("Merge future data with current observations")
     df = df.merge(label, left_index=True, right_index=True)
-    df.reset_index(level=1, inplace=True)
+
+    # Some duplicate date here
+    df.reset_index(inplace=True)
+    df.drop_duplicates(subset=['ts', 'station_id'], keep='first', inplace=True)
+    df.set_index('ts', inplace=True)
     return df
 
 def prepare_data_for_training(df, validation_date, test_date, frequency='1H', start=None, periods=1):
@@ -415,17 +419,17 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
     logger.info("Data shape after start cut: %s", df.shape)
     train = df[df.index <= validation_date].copy()
     logger.info("Data shape after prediction date cut: %s", train.shape)
-    train_X = train.drop(["probability", "future"], axis=1)
+    train_X = train.drop(["future"], axis=1)
     train_Y = train['future'].copy()
     
 
     # Splitting dateset into validation and test set on time windows
     val = df[(df.index > validation_date) & (df.index <= test_date)].copy()
-    val_X = val.drop(["probability", "future"], axis=1)
+    val_X = val.drop(["future"], axis=1)
     val_Y = val['future'].copy()
 
     test = df[df.index > test_date].copy()
-    test_X = test.drop(["probability", "future"], axis=1)
+    test_X = test.drop(["future"], axis=1)
     test_Y = test['future'].copy()
 
     logger.info("Train min date : %s / max date : %s - %s in total for %s rows", train_X.index.min(), train_X.index.max(), train_X.index.max() - train_X.index.min(), len(train_X))
@@ -545,29 +549,49 @@ def create_bool_empty_full_station(df):
     
     return df
 
-def tag_unnatural_bike_evolution(df):
+def get_last_target(df):
     """
+    Create last probability know for each station_id / ts (n-1)
 
+    Parameters
+    ----------
+    df : pandas.DataFrame
+
+    Returns
+    -------
+    df : pandas.DataFrame
     """
 
     # Resorting DataFrame on station_id & ts
     df.reset_index(inplace=True)
     df = df.sort_values(['station_id', 'ts'])
 
-    # Re create probability
-    df = bikes_probability(df)
-
     # Create shift value (n-1 value on probability)
     df = df.set_index(["ts", "station_id"])
+
     label = df["probability"].copy()
     label.name = "probability_shift"
     label = (label.reset_index(level=1)
-             .shift(1)
+             .shift(-1, freq='-10T')
              .reset_index()
              .set_index(["ts", "station_id"]))
-    logger.info("Merge future data with current observations")
-    df = df.merge(label, left_index=True, right_index=True)
-    df.reset_index(level=1, inplace=True)
+    # Have to fillna some NaN station_id index
+    # label.reset_index(inplace=True)
+    # label['station_id'] = label['station_id'].fillna(method='bfill')
+    # label['station_id'] = label['station_id'].astype('int') # Have been transform in float with fillna
+    # Re set index
+    # label = label.set_index(["ts", "station_id"])
+
+    label.reset_index(inplace=True)
+    df.reset_index(inplace=True)
+
+    logger.info("Get last data (n-1) on target")
+    df = df.merge(label, left_on=['ts', 'station_id'], right_on=['ts', 'station_id'], how='left')
+    # fill Nan value (first value with the next one)
+    df['probability_shift'] = df['probability_shift'].fillna(method='backfill')
+    df = df.sort_values(['ts', 'station_id'])
+    df.set_index('ts', inplace=True)
+    return df
 
 
 def get_station_recently_closed(df, nb_hours=4):
@@ -600,9 +624,6 @@ def get_station_recently_closed(df, nb_hours=4):
     df = df.sort_values(['station_id', 'ts',])
 
     return df
-
-
-
 
 def create_rolling_mean_features(df, features_name, feature_to_mean, features_grp, nb_shift, reset_index=True):
     """
@@ -942,7 +963,7 @@ def score_model(model, test_X, test_Y):
     print("RMSE score model on Test set is {}".format(rmse_score))
 
 
-def train_prediction_model(df, validation_date, test_date, frequency):
+def train_prediction_model(df, validation_date, test_date, frequency, bin_resampling):
     """Train a XGBoost model on `df` data with a train/validation split given
     by `predict_date` starting from temporal information (time of the day, day
     of the week) and previous bike availability
@@ -959,6 +980,8 @@ def train_prediction_model(df, validation_date, test_date, frequency):
         Reference date to split the input data between training and test sets
     frequency : DateOffset, timedelta or str
         Indicates the prediction frequency
+    bin_resampling : DateOffset, timedelta or str
+        Indicates the resampling of the dataset
 
     Returns
     -------
@@ -966,7 +989,7 @@ def train_prediction_model(df, validation_date, test_date, frequency):
         Trained XGBoost model
 
     """
-    df = time_resampling(df)
+    df = time_resampling(df, bin_resampling)
     df = complete_data(df)
 
     logger.info("Get public holiday features")
@@ -1009,7 +1032,12 @@ def train_prediction_model(df, validation_date, test_date, frequency):
     # logger.info("Create interaction features with 'mean_6' and 'median_6' ")
     # df = interaction_features('mean_6', 'median_6', df)
 
+<<<<<<< HEAD
     return df
+=======
+    logger.info("Get last probability known (n-1)")
+    df = get_last_target(df)
+>>>>>>> 3daa7aafd5e4425d9595502f01f46c1550bff1dc
 
     logger.info("Split data into train / test dataset")
     train_test_split = prepare_data_for_training(df,
@@ -1102,7 +1130,9 @@ def train_prediction_model(df, validation_date, test_date, frequency):
 
 
     logger.info("Get weather information and forecast")
+    # Exact weather for learning
     train_X = get_weather(train_X, how='learning')
+    # Forecast weather for validatoin & test
     val_X = get_weather(val_X, how='forecast', freq=frequency)
     test_X = get_weather(test_X, how='forecast', freq=frequency)
 
