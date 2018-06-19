@@ -10,9 +10,9 @@ from jitenshea.stats import (time_resampling, complete_data, add_future, prepare
 								rmse)
 
 CITY = 'Lyon'
-FILE_DATA = 'jitenshea/data/lyon-2018-03-2018-05.csv'
+FILE_DATA = 'jitenshea/data/lyon-2018-02-2018-05.csv'
 
-frequency = '30T'
+frequency = '3H'
 
 print("In dump_prediction")
 
@@ -76,9 +76,9 @@ train_X = bikes_probability(train_X)
 val_X = bikes_probability(val_X)
 test_X = bikes_probability(test_X)
 
-rmse_train = rmse(train_Y, train_X['probability'])
-rmse_val = rmse(val_Y, val_X['probability'])
-rmse_test = rmse(test_Y, test_X['probability'])
+rmse_train = rmse(train_Y, train_X['probability'].reset_index(drop=True))
+rmse_val = rmse(val_Y, val_X['probability'].reset_index(drop=True))
+rmse_test = rmse(test_Y, test_X['probability'].reset_index(drop=True))
 
 
 
