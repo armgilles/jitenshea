@@ -66,7 +66,8 @@ def get_holiday(zone):
 	df_holiday['Start date'] = df_holiday['Start date'].apply(lambda x: pd.datetime.strptime(x, '%d-%m-%Y'))
 	df_holiday['End date'] = df_holiday['End date'].apply(lambda x: pd.datetime.strptime(x, '%d-%m-%Y'))
 
-	zone_holiday = df_holiday[df_holiday.Region == zone]
+	zone_letter = zone[-1]
+	zone_holiday = df_holiday[df_holiday.Region.str.contains(zone_letter)]
 
 	return zone_holiday
 
