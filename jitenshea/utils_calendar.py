@@ -7,6 +7,8 @@ import daiquiri
 
 import pandas as pd
 from datetime import date, timedelta
+import requests
+from bs4 import BeautifulSoup
 
 import os
 os.environ['QT_QPA_PLATFORM']='offscreen' # bug here on dev server
@@ -53,8 +55,20 @@ def get_holiday(zone):
 	"""
 	try:
 		#df_holiday = pd.read_html(URL, match="Region", parse_dates=['Start date', 'End date'])[0]
-		df_holiday = pd.read_html(URL, match="Region")[0]
+		# df_holiday = pd.read_html(URL, match="Region")[0]
 		#df_holiday = pd.read_html(URL, match="Region", parse_dates=['Start date', 'End date'], attrs = {'class':"zebra"})[0]
+
+		response = requests.get(URL)
+		soup = BeautifulSoup(response.text, 'lxml')
+		table = soup.find_all('table', {"class":"zebra"})[0]
+
+		# Finding header in table
+		header_list = []
+		for col in soup.find_all('th'):
+			header_list.append(str(col).split('g>')[1].split('</')[0])
+
+		df_holiday = pd.read_html(str(table))[0]
+		df_holiday.columns = header_list
 
 		logger.info("Load holiday's data")
 		export_holiday(df_holiday)
