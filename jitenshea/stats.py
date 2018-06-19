@@ -625,9 +625,6 @@ def get_station_recently_closed(df, nb_hours=4):
 
     return df
 
-
-
-
 def create_rolling_mean_features(df, features_name, feature_to_mean, features_grp, nb_shift, reset_index=True):
     """
     function to create a rolling mean on "feature_to_mean" called "features_name" 
@@ -1102,8 +1099,12 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     # logger.info("Create interaction features with 'mean_6' and 'median_6' ")
     # df = interaction_features('mean_6', 'median_6', df)
 
+<<<<<<< HEAD
+    return df
+=======
     logger.info("Get last probability known (n-1)")
     df = get_last_target(df)
+>>>>>>> 3daa7aafd5e4425d9595502f01f46c1550bff1dc
 
     logger.info("Get absolute difference between last probability and actual")
     df = calcul_probability_diff(df)
