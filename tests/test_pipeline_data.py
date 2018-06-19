@@ -46,7 +46,7 @@ def data_resampling(data):
 @pytest.mark.pipeline_data
 def test_time_resampling(data_resampling):
 	"""
-	Test time_resampling function
+	Test time_resampling function in stats.py
 	"""
 
 	# is_open features
@@ -75,7 +75,7 @@ def data_complete(data_resampling):
 @pytest.mark.pipeline_data
 def test_complete_data(data_complete):
 	"""
-	Test complete_data
+	Test complete_data function in stats.py
 	"""
 
 	# df shape
@@ -98,7 +98,7 @@ def test_complete_data(data_complete):
 @pytest.mark.pipeline_data
 def test_get_public_holiday(data_complete):
 	"""
-	Test get_public_holiday
+	Test get_public_holiday function in stats.py
 	"""
 
 	df = stats.get_public_holiday(data_complete, count_day=5)
@@ -117,7 +117,7 @@ def test_get_public_holiday(data_complete):
 @pytest.mark.pipeline_data
 def test_get_school_holiday(data_complete):
 	"""
-	Test get_school_holiday
+	Test get_school_holiday function in stats.py
 	"""
 
 	df = stats.get_school_holiday(data_complete)
@@ -153,3 +153,23 @@ def test_get_school_holiday(data_complete):
 	assert date_df[date_df.ts == "2018-09-28"].school_holiday.values[0] == 0
 	assert date_df[date_df.ts == "2018-11-28"].school_holiday.values[0] == 0
 
+
+
+def test_create_bool_empty_full_station(data_complete):
+	"""
+	test create_bool_empty_full_station function in stats.py
+	"""
+
+
+	df = stats.create_bool_empty_full_station(data_complete)
+
+	# df shape
+	assert df.shape == (733, 10)
+
+	# Bool for warning_empty_full feature
+	assert sorted(df.warning_empty_full.unique()) == [0, 1]
+
+	# Rules
+	assert sorted(df[(df.probability >= 0.875) | (df.nb_bikes <= 2)].warning_empty_full.unique()) == [1]
+
+	
