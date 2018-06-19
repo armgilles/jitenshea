@@ -1205,8 +1205,9 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     test_X = get_weather(test_X, how='forecast', freq=frequency)
 
 
-    logger.info("Spot anomaly activity in Train Dataset")
-    anomaly_mask = get_mask_anomaly_activity(train_X)
+    # logger.info("Spot anomaly activity in Train Dataset")
+    # anomaly_mask = get_mask_anomaly_activity(train_X)
+    # Spotting (n-1)-n anomaly in 3H is not very importante
 
     logger.info("Drop some not usefull features before training session")
     
@@ -1218,7 +1219,7 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     val_X.drop('ts', axis=1, inplace=True)
     test_X.drop('ts', axis=1, inplace=True)
 
-    trained_model = fit(train_X[anomaly_mask], train_Y[anomaly_mask], val_X, val_Y)
+    trained_model = fit(train_X, train_Y, val_X, val_Y)
     model = trained_model[0]
 
     score_model(model, test_X, test_Y)
