@@ -50,7 +50,7 @@ def test_time_resampling(data_resampling):
 	"""
 
 	# is_open features
-	assert len(data_resampling.is_open.unique()) > 2
+	assert sorted(data_resampling.is_open.unique()) == [0.0, 1.0]
 
 	# Resampling on '10T'
 	list_minute = sorted(data_resampling.ts.dt.minute.unique())
@@ -172,4 +172,15 @@ def test_create_bool_empty_full_station(data_complete):
 	# Rules
 	assert sorted(df[(df.probability >= 0.875) | (df.nb_bikes <= 2)].warning_empty_full.unique()) == [1]
 
-	
+def test_get_station_recently_closed(data_complete):
+	"""
+	test get_station_recently_closed function in stats.py
+	"""
+
+	df = stats.get_station_recently_closed(data_complete)
+
+	# df shape
+	assert df.shape == (733, 10)
+
+	# Bool for  feature
+	assert sorted(df.was_recently_open.unique()) == [0, 1]
