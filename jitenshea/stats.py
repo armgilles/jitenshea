@@ -391,7 +391,7 @@ def add_future(df, frequency):
     df.set_index('ts', inplace=True)
     return df
 
-def prepare_data_for_training(df, validation_date, test_date, frequency='1H', start=None, periods=1):
+def prepare_data_for_training(df, validation_date, test_date, frequency='1H', start=None):
     """Prepare data for training
 
     Parameters
@@ -407,8 +407,6 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
     prediction frequency
     start : date.Timestamp
         Start of the history data (for training)
-    periods : int
-        Number of predictions
 
     Returns
     -------
@@ -1118,8 +1116,7 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
                                                  validation_date,
                                                  test_date,
                                                  frequency=frequency,
-                                                 start=df.index.min(),
-                                                 periods=2)
+                                                 start=df.index.min())
     train_X, train_Y, val_X, val_Y, test_X, test_Y = train_test_split
 
 #     train_X.tail()
