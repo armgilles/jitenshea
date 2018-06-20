@@ -603,9 +603,9 @@ def get_last_target(df):
 
 def get_station_recently_closed(df, nb_hours=4):
     """
-    Create a indicator who check the number of periods the station was close during the nb_hours
-    - 0 The station was NOT closed during nb_hours
-    - > 1 The station was closes X times during nb_hours
+    Create a indicator who check the number of periods the station was open during the nb_hours
+    - 0 The station is closed
+    - > 1 The station was open X times during nb_hours
 
     Need to sort the dataframe
     Warning : depend of the périod of resampling
