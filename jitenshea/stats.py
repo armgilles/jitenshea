@@ -483,6 +483,9 @@ def get_public_holiday(df, count_day=None):
                                 'public_holiday_count' : np.abs(i)})
         # DataFrame
         df_date_count = pd.DataFrame(dt_list)
+        # IF there 2 or more public holiday too close (less than count_day), it will create multiple row for same date
+        df_date_count.drop_duplicates(subset=['date'], keep='first', inplace=True)
+
         # Merging
         date_df = date_df.merge(df_date_count, on='date', how='left')
         # Filling missing value
