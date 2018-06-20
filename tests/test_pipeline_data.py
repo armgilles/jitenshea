@@ -193,7 +193,7 @@ def test_get_station_recently_closed(data_complete):
 @pytest.mark.pipeline_data
 def test_add_future(data_complete):
 	"""
-	test test_add_future function in stats.py
+	test add_future function in stats.py
 	"""
 
 	df = stats.add_future(data_complete, frequency=pytest.FREQ)
@@ -220,4 +220,60 @@ def test_add_future(data_complete):
 		# Looking in the DataFrame futur by selection
 		assert futur_probabilty ==df[(df.station_id == station) & (df.ts == futur_date)]['probability'].values[0]
 
+@pytest.mark.pipeline_data
+def test_create_rolling_mean_features(data_complete):
+	"""
+	test create_rolling_mean_features function in stats.py
+	"""
+
+	df = stats.create_rolling_mean_features(data_complete, 
+		                                     features_name='mean_6', 
+		                                     feature_to_mean='probability', 
+		                                     features_grp='station_id', 
+		                                     nb_shift=6)
+
+	# df shape 
+	assert df.shape == (733, 10)
+
+	# Test rolling mean value on nb_shift = 6
+	assert round(float(df[df.station_id == 5031][190:196]['probability'].mean()), 4) == round(float(df[df.station_id == 5031][195:196]['mean_6']), 4)
+	assert round(float(df[df.station_id == 5031][210:216]['probability'].mean()), 4) == round(float(df[df.station_id == 5031][215:216]['mean_6']), 4)
+
+	assert round(float(df[df.station_id == 10012][90:96]['probability'].mean()), 4) == round(float(df[df.station_id == 10012][95:96]['mean_6']), 4)
+	assert round(float(df[df.station_id == 10012][110:116]['probability'].mean()), 4) == round(float(df[df.station_id == 10012][115:116]['mean_6']), 4)
+
+	assert round(float(df[df.station_id == 1001][10:16]['probability'].mean()), 4) == round(float(df[df.station_id == 1001][15:16]['mean_6']), 4)
+	assert round(float(df[df.station_id == 1001][30:36]['probability'].mean()), 4) == round(float(df[df.station_id == 1001][35:36]['mean_6']), 4)
+
+	# Mean of this value
+	assert df.mean_6.mean() == 0.52317199859081198
+
+
+@pytest.mark.pipeline_data
+def test_create_rolling_std_features(data_complete):
+	"""
+	test create_rolling_std_features function in stats.py
+	"""
+
+	df = stats.create_rolling_std_features(data_complete, 
+		                                     features_name='std_9', 
+		                                     feature_to_std='probability', 
+		                                     features_grp='station_id', 
+		                                     nb_shift=9)
+
+	# df shape 
+	assert df.shape == (733, 10)
+
+	# Test rolling std value on nb_shift = 9
+	assert round(float(df[df.station_id == 5031][190:199]['probability'].std()), 4) == round(float(df[df.station_id == 5031][198:199]['std_9']), 4)
+	assert round(float(df[df.station_id == 5031][210:219]['probability'].std()), 4) == round(float(df[df.station_id == 5031][218:219]['std_9']), 4)
+
+	assert round(float(df[df.station_id == 10012][90:99]['probability'].std()), 4) == round(float(df[df.station_id == 10012][98:99]['std_9']), 4)
+	assert round(float(df[df.station_id == 10012][110:119]['probability'].std()), 4) == round(float(df[df.station_id == 10012][118:119]['std_9']), 4)
+
+	assert round(float(df[df.station_id == 1001][10:19]['probability'].std()), 4) == round(float(df[df.station_id == 1001][18:19]['std_9']), 4)
+	assert round(float(df[df.station_id == 1001][30:39]['probability'].std()), 4) == round(float(df[df.station_id == 1001][38:39]['std_9']), 4)
+
+	# Mean of this value
+	assert df.std_9.mean() == 0.054640961523453262
 
