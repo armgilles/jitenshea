@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+from datetime import timedelta
 
 from jitenshea import stats
 from jitenshea import utils_calendar
@@ -188,3 +189,35 @@ def test_get_station_recently_closed(data_complete):
 
 	# Sum of this value
 	assert df.was_recently_open.sum() == 17220.0
+
+@pytest.mark.pipeline_data
+def test_add_future(data_complete):
+	"""
+	test test_add_future function in stats.py
+	"""
+
+	df = stats.add_future(data_complete, frequency=pytest.FREQ)
+
+	# df shape (loosing some rows with merge inner)
+	assert df.shape == (679, 9)
+
+	df.reset_index(inplace=True)
+
+	if 'H' in pytest.FREQ:
+		df['date_futur'] = df.ts + timedelta(hours=int(pytest.FREQ.replace('H', '')))
+	elif 'T' in pytest.FREQ:
+		df['date_futur'] = df.ts + timedelta(minutes=int(pytest.FREQ.replace('T', '')))
+	elif 'D' in pytest.FREQ:
+		df['date_futur'] = df.ts + timedelta(days=int(pytest.FREQ.replace('D', '')))
+
+	# Taking the first 400 rows
+	for idx, row in df.head(400).iterrows():
+		futur_probabilty = row['future']
+		station = row['station_id']
+		actual_date = row['ts']
+		futur_date = row['date_futur']
+
+		# Looking in the DataFrame futur by selection
+		assert futur_probabilty ==df[(df.station_id == station) & (df.ts == futur_date)]['probability'].values[0]
+
+
