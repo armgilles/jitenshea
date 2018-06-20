@@ -153,8 +153,7 @@ def test_get_school_holiday(data_complete):
 	assert date_df[date_df.ts == "2018-09-28"].school_holiday.values[0] == 0
 	assert date_df[date_df.ts == "2018-11-28"].school_holiday.values[0] == 0
 
-
-
+@pytest.mark.pipeline_data
 def test_create_bool_empty_full_station(data_complete):
 	"""
 	test create_bool_empty_full_station function in stats.py
@@ -172,6 +171,8 @@ def test_create_bool_empty_full_station(data_complete):
 	# Rules
 	assert sorted(df[(df.probability >= 0.875) | (df.nb_bikes <= 2)].warning_empty_full.unique()) == [1]
 
+
+@pytest.mark.pipeline_data
 def test_get_station_recently_closed(data_complete):
 	"""
 	test get_station_recently_closed function in stats.py
@@ -182,5 +183,8 @@ def test_get_station_recently_closed(data_complete):
 	# df shape
 	assert df.shape == (733, 10)
 
-	# Bool for  feature
-	assert sorted(df.was_recently_open.unique()) == [0, 1]
+	# Number of different value for was_recently_open
+	assert df.was_recently_open.nunique() == 24
+
+	# Sum of this value
+	assert df.was_recently_open.sum() == 17220.0
