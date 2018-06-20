@@ -325,6 +325,10 @@ def time_resampling(df, bin_resampling="10T"):
           .resample(bin_resampling, on="ts")[["ts", "nb_bikes", "nb_stands", "is_open", "probability"]]
           .mean()
           .bfill())
+
+    # Sometime station can be OPEN & CLOSED in the same time (doublon in raw data). 
+    # With agg mean, it's become 0.5 or 0.33 etc --> Fix it by forcing to 1 if is_open > 0
+    df.loc[df['is_open'] > 0, 'is_open'] = 1
     return df.reset_index()
 
 def complete_data(df):
