@@ -416,8 +416,6 @@ def prepare_data_for_training(df, validation_date, test_date, frequency='1H', st
         two for training, two for testing (train_X, train_Y, val_X, val_Y, test_X, test_Y)
     """
     logger.info("Split train and test according to a validation date")
-    cut = validation_date - pd.Timedelta(frequency.replace('T', 'm'))
-    stop = validation_date + periods * pd.Timedelta(frequency.replace('T', 'm'))
     if start is not None:
         df = df[df.index >= start]
     logger.info("Data shape after start cut: %s", df.shape)
