@@ -190,13 +190,23 @@ def test_get_station_recently_closed(data_complete):
 	# Sum of this value
 	assert df.was_recently_open.sum() == 17220.0
 
+
+@pytest.fixture
+def data_with_target(data_complete):
+	"""
+	get data with target creation
+	"""
+
+	data_with_target = stats.add_future(data_complete, frequency=pytest.FREQ)
+	return data_with_target
+
 @pytest.mark.pipeline_data
-def test_add_future(data_complete):
+def test_add_future(data_with_target):
 	"""
 	test add_future function in stats.py
 	"""
 
-	df = stats.add_future(data_complete, frequency=pytest.FREQ)
+	df = data_with_target
 
 	# df shape (loosing some rows with merge inner)
 	assert df.shape == (679, 9)
@@ -277,3 +287,66 @@ def test_create_rolling_std_features(data_complete):
 	# Mean of this value
 	assert df.std_9.mean() == 0.054640961523453262
 
+@pytest.mark.pipeline_data
+def test_get_last_target(data_complete):
+	"""
+	test get_last_target function in stats.py
+	"""
+
+	df = stats.get_last_target(data_complete)
+
+	# df shape 
+	assert df.shape == (733, 10)
+
+	# probability shift N+1 == probability N
+	assert df[df.station_id == 5031][144:145]['probability_shift'].values[0] == df[df.station_id == 5031][143:144]['probability'].values[0]
+	assert df[df.station_id == 5031][145:146]['probability_shift'].values[0] == df[df.station_id == 5031][144:145]['probability'].values[0]
+
+	assert df[df.station_id == 10012][91:92]['probability_shift'].values[0] == df[df.station_id == 10012][90:91]['probability'].values[0]
+	assert df[df.station_id == 10012][110:111]['probability_shift'].values[0] == df[df.station_id == 10012][109:110]['probability'].values[0]
+
+	assert df[df.station_id == 1001][14:15]['probability_shift'].values[0] == df[df.station_id == 1001][13:14]['probability'].values[0]
+	assert df[df.station_id == 1001][34:35]['probability_shift'].values[0] == df[df.station_id == 1001][33:34]['probability'].values[0]
+
+	# Mean of this value
+	assert df.probability_shift.mean() == 0.5251293006934028
+
+@pytest.mark.pipeline_data
+def test_prepare_data_for_training(data, data_with_target):
+	"""
+	test prepare_data_for_training function in stats.py
+	"""
+
+	delta_ts_df = data.ts.max() - data.ts.min()
+	delta_15_percent = delta_ts_df *0.15
+	validation_date = data.ts.max() - (delta_15_percent * 2)
+	test_date = data.ts.max() - (delta_15_percent)
+
+	train_test_split = stats.prepare_data_for_training(data_with_target,
+														validation_date,
+														test_date,
+														frequency=pytest.FREQ,
+														start=data_with_target.index.min())
+	train_X, train_Y, val_X, val_Y, test_X, test_Y = train_test_split
+
+	# Total rows
+	assert len(train_X) + len(val_X) + len(test_X) == len(data_with_target)
+	assert len(train_Y) + len(val_Y) + len(test_Y) == len(data_with_target)
+
+	# testing begin and end of dataframe
+	assert train_X.index.min() == data_with_target.index.min()
+	assert test_X.index.max() == data_with_target.index.max()
+
+	# Test index type
+	# X have DatetimeIndex type
+	assert isinstance(train_X.index, pd.DatetimeIndex)
+	assert isinstance(val_X.index, pd.DatetimeIndex)
+	assert isinstance(test_X.index, pd.DatetimeIndex)
+	# Y have RangeIndex type
+	assert isinstance(train_Y.index, pd.RangeIndex)
+	assert isinstance(val_Y.index, pd.RangeIndex)
+	assert isinstance(test_Y.index, pd.RangeIndex)
+
+
+
+    
