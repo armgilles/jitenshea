@@ -45,6 +45,7 @@ XGB_PARAM ={"objective": "reg:logistic",
               "max_depth": 8,
               "subsample":0.9,
               "silent": 1,
+              'tree_method': 'hist',
               "seed": SEED}
 NUM_ROUND = 40
 
