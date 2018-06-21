@@ -1116,7 +1116,7 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
                                                  validation_date,
                                                  test_date,
                                                  frequency=frequency,
-                                                 start=df.index.min())
+                                                 start=df.index.min()
     train_X, train_Y, val_X, val_Y, test_X, test_Y = train_test_split
 
 #     train_X.tail()
