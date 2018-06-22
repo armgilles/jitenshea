@@ -32,22 +32,22 @@ def get_features_importance(clf, top=24):
 	return df_importance
 
 def export_data_set(train_X, train_Y, val_X, val_Y, test_X, test_Y, train_index, val_index, test_index, model, export_name=None):
-	train = train_X.copy()
-	train['y_pred'] = model.predict(xgb.DMatrix(train_X))
-	train.set_index(train_index, inplace=True)
+	train = train_X.reset_index(drop=True).copy()
+	train['y_pred'] = model.predict(train_X)
 	train['y'] = train_Y
+	train.set_index(train_index, inplace=True)
 	train['type'] = 'train'
 
-	val = val_X.copy()
-	val['y_pred'] = model.predict(xgb.DMatrix(val_X))
-	val.set_index(val_index, inplace=True)
+	val = val_X.reset_index(drop=True).copy()
+	val['y_pred'] = model.predict(val_X)
 	val['y'] = val_Y
+	val.set_index(val_index, inplace=True)
 	val['type'] = 'val'
 
-	test = test_X.copy()
-	test['y_pred'] = model.predict(xgb.DMatrix(test_X))
-	test.set_index(test_index, inplace=True)
+	test = test_X.reset_index(drop=True).copy()
+	test['y_pred'] = model.predict(test_X)
 	test['y'] = test_Y
+	test.set_index(test_index, inplace=True)
 	test['type'] = 'test'
 
 	if export_name == None:

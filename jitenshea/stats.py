@@ -49,6 +49,17 @@ XGB_PARAM ={"objective": "reg:logistic",
               "seed": SEED}
 NUM_ROUND = 40
 
+XGB_PARAM_SK = {"objective": "reg:logistic",
+                  #"booster" : "gbtree",
+                  "learning_rate": 0.2,
+                  "n_estimators" : 40,
+                  "max_depth": 11,
+                  "subsample":0.85,
+                  "silent": 1,
+                  'tree_method': 'hist',
+                  "random_state": SEED,
+                  "n_jobs" : -1}
+
 
 ###################################
 ###         CLUSTER ACTIVITE
@@ -967,8 +978,7 @@ def get_mask_anomaly_activity(df, threshold=0.5):
 ###         ALGO
 ###################################
 
-
-def fit(train_X, train_Y, test_X, test_Y):
+def fit(train_X, train_Y, test_X, test_Y, XGB_PARAM_SK=XGB_PARAM_SK):
     """Train the xgboost model
 
     Parameters
@@ -980,28 +990,17 @@ def fit(train_X, train_Y, test_X, test_Y):
 
     Returns
     -------
-    XGBoost.model
+    XGBoost.XGBRegressor
         Booster trained model
     """
     logger.info("Fit training data with the model...")
-    # param = {'objective': 'reg:linear'}
-    # param = {'objective': 'reg:logistic'}
-    # param['eta'] = 0.2
-    # param['max_depth'] = 6
-    # param['silent'] = 1
-    # param['nthread'] = 4
-    # param['seed'] = SEED
-    training_progress = dict()
-    xg_train = xgb.DMatrix(train_X, label=train_Y)
-    xg_test = xgb.DMatrix(test_X, label=test_Y)
-    watchlist = [(xg_train, 'train'), (xg_test, 'test')]
-    bst = xgb.train(params=XGB_PARAM,
-                    dtrain=xg_train,
-                    num_boost_round=NUM_ROUND,
-                    evals=watchlist,
-                    evals_result=training_progress)
-    return bst, training_progress
+    
+    eval_set = [(train_X, train_Y, 'train-rmse'), (test_X, test_Y, 'eval-rmse')]
+    
+    model = xgb.XGBRegressor(**XGB_PARAM_SK)
 
+    model.fit(train_X, train_Y, eval_set=eval_set, verbose=True)
+    return model
 
 def rmse(y_true, y_pred):
         """Compute RMSE score
@@ -1017,6 +1016,7 @@ def rmse(y_true, y_pred):
         rmse = np.sqrt(np.mean((y_pred - y_true)**2))
         return rmse
 
+
 def score_model(model, test_X, test_Y):
     """Predict on test_X with model 
             Score the prediction with reality (test_Y) RMSE
@@ -1031,10 +1031,11 @@ def score_model(model, test_X, test_Y):
     -------
     None
     """
-    y_pred = model.predict(xgb.DMatrix(test_X))
+    y_pred = model.predict(test_X)
     rmse_score = rmse(test_Y, y_pred)
     
     print("RMSE score model on Test set is {}".format(rmse_score))
+
 
 
 def train_prediction_model(df, validation_date, test_date, frequency, bin_resampling):
@@ -1222,9 +1223,10 @@ def train_prediction_model(df, validation_date, test_date, frequency, bin_resamp
     val_X.drop('ts', axis=1, inplace=True)
     test_X.drop('ts', axis=1, inplace=True)
 
-    trained_model = fit(train_X, train_Y, val_X, val_Y)
-    model = trained_model[0]
+    model = fit(train_X, train_Y, val_X, val_Y)
 
     score_model(model, test_X, test_Y)
 
-    return trained_model[0], train_X, train_Y, val_X, val_Y, test_X, test_Y,train_index, val_index, test_index
+    return model, train_X, train_Y, val_X, val_Y, test_X, test_Y,train_index, val_index, test_index
+
+
